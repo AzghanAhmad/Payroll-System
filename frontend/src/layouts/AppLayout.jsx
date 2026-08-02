@@ -160,24 +160,25 @@ export default function AppLayout({ children, title }) {
       {/* Column scrolls in main only — sticky table headers stay under the fixed navbar */}
       <div className="flex h-dvh min-w-0 flex-col overflow-hidden lg:pl-64">
         <header className="shrink-0 z-40 h-16 border-b border-border/80 bg-white/95 backdrop-blur-md shadow-sm">
-          <div className="h-full px-4 sm:px-6 grid grid-cols-[1fr_minmax(0,28rem)_1fr] items-center gap-3">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="h-full px-3 sm:px-6 flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 min-w-0 shrink-0 max-w-[42%] sm:max-w-[220px]">
               <button
                 className="lg:hidden rounded-[12px] p-2 hover:bg-slate-100 cursor-pointer shrink-0"
                 onClick={() => setOpen((v) => !v)}
+                aria-label="Open menu"
               >
                 {open ? <X size={20} /> : <Menu size={20} />}
               </button>
 
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-heading text-slate-900 truncate">{title}</h1>
+              <div className="min-w-0 hidden xs:block sm:block">
+                <h1 className="text-base sm:text-xl font-heading text-slate-900 truncate">{title}</h1>
               </div>
             </div>
 
-            {/* Global search — centered */}
-            <div ref={searchRef} className="relative w-full justify-self-center">
+            {/* Global search — grows in the middle, never overlaps hamburger */}
+            <div ref={searchRef} className="relative flex-1 min-w-0 max-w-xl mx-auto">
               <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 <input
                   type="search"
                   value={search}
@@ -193,7 +194,7 @@ export default function AppLayout({ children, title }) {
                     }
                     if (e.key === 'Escape') setSearchOpen(false);
                   }}
-                  placeholder="Search pages…"
+                  placeholder="Search…"
                   className="w-full rounded-full border border-border bg-slate-50 pl-9 pr-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 focus:bg-white"
                 />
               </div>
@@ -219,7 +220,7 @@ export default function AppLayout({ children, title }) {
             </div>
 
             {/* Profile menu */}
-            <div ref={profileRef} className="relative shrink-0 justify-self-end">
+            <div ref={profileRef} className="relative shrink-0 ml-auto">
               <button
                 type="button"
                 onClick={() => setProfileOpen((v) => !v)}
@@ -229,7 +230,7 @@ export default function AppLayout({ children, title }) {
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-white text-xs font-semibold shadow-sm">
                   {initials || <UserRound size={16} />}
                 </span>
-                <ChevronDown size={14} className={cn('text-slate-500 transition', profileOpen && 'rotate-180')} />
+                <ChevronDown size={14} className={cn('text-slate-500 transition hidden sm:block', profileOpen && 'rotate-180')} />
               </button>
 
               {profileOpen && (

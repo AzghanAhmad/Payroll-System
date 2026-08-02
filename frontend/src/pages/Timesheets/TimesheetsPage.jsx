@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import AppLayout from '@/layouts/AppLayout';
@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
 import { FileUpload } from '@/components/ui/FileUpload';
-import { timesheetApi, settingsApi, payrollApi, opsApi } from '@/services';
+import { timesheetApi, settingsApi, payrollApi, opsApi, calendarApi } from '@/services';
 import { WEEK_DAYS, MONTHS, formatNumber, formatMoney, yearOptions } from '@/utils/helpers';
 import {
   getWeekPeriod,
@@ -47,13 +47,23 @@ const EMP_W = 150;
 const FIELD_W = 56;
 
 export default function TimesheetsPage() {
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [week, setWeek] = useState(1);
+  const [monthSynced, setMonthSynced] = useState(false);
   const qc = useQueryClient();
 
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+  // Align with Month Control / settings payroll month once loaded
+  useEffect(() => {
+    if (monthSynced || !settings) return;
+    if (settings.currentPayrollYear && settings.currentPayrollMonth) {
+      setYear(settings.currentPayrollYear);
+      setMonth(settings.currentPayrollMonth);
+    }
+    setMonthSynced(true);
+  }, [settings, monthSynced]);
   const { data: timesheet, isLoading } = useQuery({
     queryKey: ['timesheet', year, month],
     queryFn: () => timesheetApi.getMonth(year, month),
@@ -61,9 +71,35 @@ export default function TimesheetsPage() {
 
   const [localWeeks, setLocalWeeks] = useState([]);
   const [attendanceFile, setAttendanceFile] = useState(null);
+  const timesheetDirty = useRef(false);
 
   useEffect(() => {
-    if (timesheet?.weeks) setLocalWeeks(JSON.parse(JSON.stringify(timesheet.weeks)));
+    if (!timesheet?.weeks) return;
+    // Always take server weeks when clean; when dirty, merge any newly added employees
+    setLocalWeeks((prev) => {
+      const server = JSON.parse(JSON.stringify(timesheet.weeks));
+      if (!timesheetDirty.current || !prev?.length) {
+        timesheetDirty.current = false;
+        return server;
+      }
+      return server.map((sw) => {
+        const lw = prev.find((w) => Number(w.weekNumber) === Number(sw.weekNumber));
+        if (!lw) return sw;
+        const localByEmp = new Map(
+          (lw.entries || []).map((e) => [String(e.employee?._id || e.employee), e])
+        );
+        const mergedEntries = (sw.entries || []).map((se) => {
+          const id = String(se.employee?._id || se.employee);
+          const local = localByEmp.get(id);
+          if (!local) return se; // brand-new employee from server
+          return {
+            ...local,
+            employee: se.employee || local.employee, // keep populated employee for costing names/rates
+          };
+        });
+        return { ...sw, entries: mergedEntries };
+      });
+    });
   }, [timesheet]);
 
   const attendanceMut = useMutation({
@@ -82,11 +118,22 @@ export default function TimesheetsPage() {
   const saveMutation = useMutation({
     mutationFn: () => timesheetApi.update(timesheet._id, { weeks: localWeeks }),
     onSuccess: () => {
-      toast.success('Timesheet saved');
+      timesheetDirty.current = false;
       qc.invalidateQueries({ queryKey: ['timesheet', year, month] });
+      qc.invalidateQueries({ queryKey: ['payrolls'] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
+    onError: (err) => toast.error(err.response?.data?.message || 'Autosave failed'),
   });
+
+  // Autosave timesheet edits without pressing Save
+  useEffect(() => {
+    if (!timesheet?._id || !timesheetDirty.current) return undefined;
+    const t = setTimeout(() => {
+      if (timesheetDirty.current) saveMutation.mutate();
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localWeeks, timesheet?._id]);
 
   const generateMut = useMutation({
     mutationFn: () => payrollApi.generateWeekly({ year, month, week }),
@@ -99,19 +146,56 @@ export default function TimesheetsPage() {
     onError: (err) => toast.error(err.response?.data?.message || 'Generate failed'),
   });
 
-  const currentWeek = localWeeks.find((w) => w.weekNumber === week);
+  const currentWeek = useMemo(
+    () => localWeeks.find((w) => Number(w.weekNumber) === Number(week)),
+    [localWeeks, week]
+  );
   const period = getWeekPeriod(year, month, week);
 
+  const { data: calendarEvents } = useQuery({
+    queryKey: ['calendar', year, month],
+    queryFn: () => calendarApi.list({ year, month }),
+  });
+
+  const holidayDates = useMemo(() => {
+    const set = new Set();
+    (calendarEvents || []).forEach((ev) => {
+      if (ev.type !== 'holiday' || !ev.date) return;
+      const d = new Date(ev.date);
+      set.add(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`);
+    });
+    return set;
+  }, [calendarEvents]);
+
+  const isHolidayDay = (weekNumber, dayKey) => {
+    const dayIndex = WEEK_DAYS.findIndex((d) => d.key === dayKey);
+    if (dayIndex < 0) return false;
+    const dt = getDayDate(year, month, weekNumber, dayIndex);
+    if (!dt) return false;
+    return holidayDates.has(`${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`);
+  };
+
   const updateDayField = (entryIdx, dayKey, field, value) => {
+    if (isHolidayDay(week, dayKey)) {
+      toast.error('This day is a holiday — hours cannot be entered');
+      return;
+    }
+    timesheetDirty.current = true;
     setLocalWeeks((prev) => {
       const next = structuredClone(prev);
       const w = next.find((x) => x.weekNumber === week);
       if (!w) return prev;
       const entry = w.entries[entryIdx];
       if (!entry.days[dayKey]) entry.days[dayKey] = {};
-      entry.days[dayKey][field] = value;
-
       const d = entry.days[dayKey];
+
+      if (field === 'breakHours') {
+        d.breakHours = value;
+        d.breakManual = true;
+      } else {
+        d[field] = value;
+      }
+
       const parse = (t) => {
         if (!t || !String(t).includes(':')) return null;
         const [h, m] = String(t).split(':').map(Number);
@@ -119,6 +203,10 @@ export default function TimesheetsPage() {
       };
       const inH = parse(d.clockIn);
       const outH = parse(d.clockOut);
+      // Auto 30‑min break when both clocks set and break not manually set
+      if (inH != null && outH != null && !d.breakManual) {
+        d.breakHours = 0.5;
+      }
       if (inH != null && outH != null) {
         let hours = outH - inH - (Number(d.breakHours) || 0);
         if (hours < 0) hours += 24;
@@ -137,6 +225,7 @@ export default function TimesheetsPage() {
   };
 
   const updateNotes = (entryIdx, notes) => {
+    timesheetDirty.current = true;
     setLocalWeeks((prev) => {
       const next = structuredClone(prev);
       const w = next.find((x) => x.weekNumber === week);
@@ -208,13 +297,13 @@ export default function TimesheetsPage() {
                 Period: {formatShortDate(period.start)} – {formatShortDate(period.end)} · {MONTHS[month - 1]}-{year}
               </div>
             </div>
-            <Button type="button" variant="outline" onClick={() => saveMutation.mutate()} disabled={!timesheet || saveMutation.isPending}>
-              {saveMutation.isPending ? 'Saving…' : 'Save Timesheet'}
-            </Button>
+            <span className="text-xs text-muted px-2 py-1 rounded-lg bg-slate-50 border border-border">
+              {saveMutation.isPending ? 'Saving…' : 'Autosaves as you type'}
+            </span>
             <Button
               type="button"
               onClick={async () => {
-                await saveMutation.mutateAsync();
+                if (timesheetDirty.current) await saveMutation.mutateAsync();
                 generateMut.mutate();
               }}
               disabled={!timesheet || generateMut.isPending}
@@ -228,8 +317,9 @@ export default function TimesheetsPage() {
           <div>
             <h3 className="font-heading text-sm">Biometric Attendance Upload</h3>
             <p className="text-xs text-muted mt-1 max-w-xl">
-              Upload the scanner Excel (AC-No., Name, Date, Clock In, Clock Out). Matching staff timesheet
-              In/Out cells are filled automatically.
+              Create each staff member first with the <strong>same full name</strong> (or matching AC-No. / employee ID)
+              as on the scanner sheet, then import. A <strong>30‑min break</strong> is deducted automatically when both
+              In and Out are set — you can still edit Break manually.
             </p>
           </div>
           <div className="space-y-1.5">
@@ -288,12 +378,15 @@ export default function TimesheetsPage() {
                   <th className="px-2 py-2 text-left sticky z-[1] bg-slate-100 border-r" style={{ left: EMP_W, minWidth: FIELD_W }}>
                     Field
                   </th>
-                  {WEEK_DAYS.map((d, i) => (
-                    <th key={d.key} className="px-1 py-2 text-center min-w-[96px] bg-slate-100">
-                      <div>{d.label}</div>
-                      <div className="font-normal text-muted">{formatShortDate(getDayDate(year, month, week, i))}</div>
-                    </th>
-                  ))}
+                  {WEEK_DAYS.map((d, i) => {
+                    const hol = isHolidayDay(week, d.key);
+                    return (
+                      <th key={d.key} className={`px-1 py-2 text-center min-w-[96px] ${hol ? 'bg-rose-100 text-rose-900' : 'bg-slate-100'}`}>
+                        <div>{d.label}{hol ? ' · Holiday' : ''}</div>
+                        <div className="font-normal text-muted">{formatShortDate(getDayDate(year, month, week, i))}</div>
+                      </th>
+                    );
+                  })}
                   <th className="px-2 py-2 text-right bg-sky-100 text-sky-900">Week Hrs</th>
                   <th className="px-2 py-2 text-right bg-violet-100 text-violet-900">Rate</th>
                 </tr>
@@ -332,13 +425,16 @@ export default function TimesheetsPage() {
                         </td>
                         {WEEK_DAYS.map((d) => {
                           const day = entry.days?.[d.key] || {};
+                          const hol = isHolidayDay(week, d.key);
                           return (
-                            <td key={d.key} className={`px-0.5 py-0.5 ${tone.cell}`}>
+                            <td key={d.key} className={`px-0.5 py-0.5 ${hol ? 'bg-rose-50' : tone.cell}`}>
                               {field.type === 'time' && (
                                 <input
                                   type="time"
-                                  className={inputClass}
-                                  value={day[field.key] || ''}
+                                  className={`${inputClass} ${hol ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                  value={hol ? '' : (day[field.key] || '')}
+                                  disabled={hol}
+                                  title={hol ? 'Public holiday — hours locked' : undefined}
                                   onChange={(e) => updateDayField(idx, d.key, field.key, e.target.value)}
                                 />
                               )}
@@ -347,14 +443,16 @@ export default function TimesheetsPage() {
                                   type="number"
                                   step="0.25"
                                   min="0"
-                                  className={inputClass}
-                                  value={day.breakHours ?? 0}
+                                  className={`${inputClass} ${hol ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                  value={hol ? 0 : (day.breakHours ?? 0)}
+                                  disabled={hol}
+                                  title={hol ? 'Public holiday — hours locked' : undefined}
                                   onChange={(e) => updateDayField(idx, d.key, 'breakHours', Number(e.target.value))}
                                 />
                               )}
                               {field.type === 'display' && (
-                                <div className={`text-center font-semibold py-1.5 rounded-lg bg-emerald-100/90 ${tone.value}`}>
-                                  {formatNumber(day.workingHours || 0)}
+                                <div className={`text-center font-semibold py-1.5 rounded-lg ${hol ? 'bg-rose-100 text-rose-800' : `bg-emerald-100/90 ${tone.value}`}`}>
+                                  {hol ? '—' : formatNumber(day.workingHours || 0)}
                                 </div>
                               )}
                             </td>

@@ -75,7 +75,28 @@ export const getOrCreateTimesheet = asyncHandler(async (req, res) => {
   }
 
   const changed = await syncActiveEmployees(ts, settings);
-  if (changed) await ts.save();
+
+  // Recompute hours (applies default 30‑min break when not manually overridden)
+  let hoursChanged = false;
+  for (const week of ts.weeks || []) {
+    for (const entry of week.entries || []) {
+      const before = entry.weeklyHours;
+      const empId = entry.employee?._id || entry.employee;
+      const emp = await Employee.findById(empId).select('hourlyRate');
+      recalculateEntry(entry, emp?.hourlyRate || 0, settings);
+      if (Number(before) !== Number(entry.weeklyHours)) hoursChanged = true;
+      // Also detect break auto-apply
+      for (const day of Object.values(entry.days || {})) {
+        if (day?.clockIn && day?.clockOut && !day.breakManual && Number(day.breakHours) === 0.5) {
+          hoursChanged = true;
+        }
+      }
+    }
+  }
+  if (changed || hoursChanged) {
+    ts.markModified('weeks');
+    await ts.save();
+  }
 
   ts = await Timesheet.findById(ts._id).populate(
     'weeks.entries.employee',
@@ -95,6 +116,9 @@ export const updateTimesheet = asyncHandler(async (req, res) => {
   if (status) ts.status = status;
 
   if (weeks) {
+    const { getWeekPeriod } = await import('../utils/weekPeriod.js');
+    const { isHolidayDate } = await import('../services/calendarService.js');
+
     for (const weekPayload of weeks) {
       let week = ts.weeks.find((w) => w.weekNumber === weekPayload.weekNumber);
       if (!week) {
@@ -102,6 +126,7 @@ export const updateTimesheet = asyncHandler(async (req, res) => {
         ts.weeks.push(week);
       }
       if (weekPayload.entries) {
+        const { start } = getWeekPeriod(ts.year, ts.month, week.weekNumber);
         for (const entryPayload of weekPayload.entries) {
           const empId = entryPayload.employee?._id || entryPayload.employee;
           let entry = week.entries.find(
@@ -114,6 +139,19 @@ export const updateTimesheet = asyncHandler(async (req, res) => {
           if (entryPayload.days) {
             for (const day of WEEK_DAYS) {
               if (entryPayload.days[day]) {
+                const dayIndex = WEEK_DAYS.indexOf(day);
+                const dayDate = new Date(start);
+                dayDate.setDate(start.getDate() + dayIndex);
+                if (await isHolidayDate(dayDate)) {
+                  entry.days[day] = {
+                    clockIn: '',
+                    clockOut: '',
+                    breakHours: 0,
+                    workingHours: 0,
+                    dailyCost: 0,
+                  };
+                  continue;
+                }
                 entry.days[day] = { ...entry.days[day]?.toObject?.() || entry.days[day], ...entryPayload.days[day] };
               }
             }
@@ -162,6 +200,20 @@ export const updateDay = asyncHandler(async (req, res) => {
   const settings = await getSettings();
   const week = ts.weeks.find((w) => w.weekNumber === Number(weekNumber));
   if (!week) throw new AppError('Week not found', 404);
+
+  // Block clock edits on public holidays
+  const { getWeekPeriod } = await import('../utils/weekPeriod.js');
+  const { isHolidayDate } = await import('../services/calendarService.js');
+  const { start } = getWeekPeriod(Number(year), Number(month), Number(weekNumber));
+  const dayIndex = WEEK_DAYS.indexOf(day);
+  const dayDate = new Date(start);
+  dayDate.setDate(start.getDate() + dayIndex);
+  if (await isHolidayDate(dayDate)) {
+    throw new AppError(
+      `Cannot enter hours — ${dayDate.toLocaleDateString('en-GB')} is a public holiday`,
+      400
+    );
+  }
 
   let entry = week.entries.find((e) => String(e.employee) === String(employeeId));
   if (!entry) {

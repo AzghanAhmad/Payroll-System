@@ -9,6 +9,8 @@ export const resolveDoubleTime = (dayKey, currentFlag, settings = {}) => {
   return Boolean(currentFlag);
 };
 
+export const DEFAULT_BREAK_HOURS = 0.5;
+
 export const recalculateEntry = (entry, hourlyRate = 0, settings = {}) => {
   let weeklyHours = 0;
   let weeklyCost = 0;
@@ -16,6 +18,10 @@ export const recalculateEntry = (entry, hourlyRate = 0, settings = {}) => {
 
   for (const day of WEEK_DAYS) {
     const d = entry.days[day] || {};
+    // Auto-deduct 30 min break when both clocks are set, unless manually overridden
+    if (d.clockIn && d.clockOut && !d.breakManual) {
+      d.breakHours = DEFAULT_BREAK_HOURS;
+    }
     const hours = calcDailyHours(d.clockIn, d.clockOut, d.breakHours);
     d.workingHours = hours;
     d.dailyCost = round2(hours * hourlyRate);
@@ -37,6 +43,7 @@ export const emptyDay = () => ({
   clockIn: '',
   clockOut: '',
   breakHours: 0,
+  breakManual: false,
   workingHours: 0,
   dailyCost: 0,
   remarks: '',

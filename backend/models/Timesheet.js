@@ -6,6 +6,8 @@ const daySchema = new mongoose.Schema(
     clockIn: { type: String, default: '' },
     clockOut: { type: String, default: '' },
     breakHours: { type: Number, default: 0 },
+    /** true once the user edits break — stops auto 30‑min default from re‑applying */
+    breakManual: { type: Boolean, default: false },
     workingHours: { type: Number, default: 0 },
     dailyCost: { type: Number, default: 0 },
     remarks: { type: String, default: '' },

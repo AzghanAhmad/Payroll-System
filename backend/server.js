@@ -56,6 +56,37 @@ app.use(
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Serve employee photos from disk, or restore from DB photoData if the file is missing
+app.get('/uploads/photos/:filename', async (req, res, next) => {
+  try {
+    const filePath = path.join(uploadRoot, 'photos', req.params.filename);
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
+    const Employee = (await import('./models/Employee.js')).default;
+    const photoPath = `/uploads/photos/${req.params.filename}`;
+    const emp = await Employee.findOne({ photo: photoPath }).select('+photoData');
+    if (emp?.photoData?.startsWith('data:')) {
+      const m = emp.photoData.match(/^data:([^;]+);base64,(.+)$/);
+      if (m) {
+        // Restore file for next request
+        try {
+          fs.mkdirSync(path.dirname(filePath), { recursive: true });
+          fs.writeFileSync(filePath, Buffer.from(m[2], 'base64'));
+        } catch {
+          /* ignore restore errors */
+        }
+        res.type(m[1]);
+        return res.send(Buffer.from(m[2], 'base64'));
+      }
+    }
+    return res.status(404).json({ message: 'Photo not found' });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 app.use('/uploads', express.static(uploadRoot));
 
 // Do not cache dynamic API responses

@@ -200,20 +200,13 @@ export default function IouTrackerPage() {
     }
   };
 
+  const staffRows = useMemo(() => data?.staff || [], [data]);
   const staffWithIou = useMemo(
-    () => (data?.staff || []).filter((r) => r.loanId),
-    [data]
+    () => staffRows.filter((r) => r.loanId && Number(r.iouAmount) > 0),
+    [staffRows]
   );
 
-  const employeesWithoutActive = useMemo(() => {
-    const taken = new Set(
-      (data?.staff || [])
-        .filter((r) => r.loanId && r.status === 'Outstanding')
-        .map((r) => String(r.employeeId))
-    );
-    return empList.filter((e) => !taken.has(String(e._id)));
-  }, [empList, data]);
-
+  const employeesWithoutActive = useMemo(() => empList, [empList]);
   const onAdd = (e) => {
     e.preventDefault();
     if (!form.employee || !form.amount) {
@@ -365,7 +358,7 @@ export default function IouTrackerPage() {
           </div>
           {staffWithIou.length === 0 && !isLoading && (
             <p className="px-4 py-3 text-sm text-muted border-t border-border">
-              No IOUs yet — type an amount in a yellow cell, or click <strong>Add IOU</strong>.
+              No IOUs with amounts yet — type an amount in a yellow cell for a staff row, or click <strong>Add IOU</strong>.
             </p>
           )}
         </Card>
@@ -541,15 +534,25 @@ function TrackerRow({ row, viewWeek, saving, saved, onAutosaveFields, onAutosave
   };
 
   const localWeeks = useMemo(() => {
-    let running = Number(amount) || 0;
+    const delta = (Number(amount) || 0) - Number(row.iouAmount || 0);
+    let running = Math.max(0, Number(row.openingBalance ?? row.iouAmount ?? 0) + delta);
     return [1, 2, 3, 4, 5].map((w) => {
       const pay = Number(payments[w]) || 0;
       running = Math.max(0, Math.round((running - pay) * 100) / 100);
       return { week: w, payment: pay, balance: running };
     });
-  }, [amount, payments]);
+  }, [amount, payments, row.openingBalance, row.iouAmount]);
 
-  const totalRepaid = localWeeks.reduce((s, w) => s + w.payment, 0);
+  const totalRepaid = useMemo(() => {
+    // Lifetime repaid from server when available; else sum of visible week payments + prior
+    const monthPay = localWeeks.reduce((s, w) => s + w.payment, 0);
+    const prior = Math.max(
+      0,
+      Number(row.iouAmount || 0) - Number(row.openingBalance ?? row.iouAmount ?? 0)
+    );
+    return Math.round((prior + monthPay) * 100) / 100;
+  }, [localWeeks, row]);
+
   const finalBal = localWeeks[4]?.balance ?? 0;
   const status =
     !(hasLoan || Number(amount) > 0)

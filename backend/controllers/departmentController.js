@@ -1,4 +1,5 @@
 import Department from '../models/Department.js';
+import Employee from '../models/Employee.js';
 import { asyncHandler } from '../utils/helpers.js';
 import { AppError } from '../middleware/errorMiddleware.js';
 
@@ -22,7 +23,12 @@ export const updateDepartment = asyncHandler(async (req, res) => {
 });
 
 export const deleteDepartment = asyncHandler(async (req, res) => {
-  const dept = await Department.findByIdAndDelete(req.params.id);
+  const dept = await Department.findById(req.params.id);
   if (!dept) throw new AppError('Department not found', 404);
+
+  // Unassign staff so the delete is never blocked by references
+  await Employee.updateMany({ department: dept._id }, { $unset: { department: 1 } });
+  await dept.deleteOne();
+
   res.json({ message: 'Department deleted' });
 });

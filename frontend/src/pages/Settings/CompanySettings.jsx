@@ -1,5 +1,4 @@
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { CURRENCIES } from '@/utils/currencies';
@@ -11,7 +10,7 @@ const FIELDS = [
 ];
 
 export default function CompanySettings() {
-  const { form, set, logo, setLogo, save, isSaving, isLoading } = useSettingsForm(FIELDS);
+  const { form, set, logo, setLogo, isSaving, isLoading } = useSettingsForm(FIELDS);
 
   return (
     <div className="space-y-4">
@@ -20,9 +19,9 @@ export default function CompanySettings() {
           <h2 className="font-heading text-lg">Company</h2>
           <p className="text-sm text-muted">Business identity shown on payslips and reports.</p>
         </div>
-        <Button type="button" onClick={save} disabled={isSaving || isLoading}>
-          {isSaving ? 'Saving…' : 'Save'}
-        </Button>
+        <span className="text-xs text-muted px-2 py-1.5 rounded-lg bg-slate-50 border border-border">
+          {isSaving ? 'Saving…' : 'Autosaves as you type'}
+        </span>
       </div>
 
       <Card className="space-y-4">

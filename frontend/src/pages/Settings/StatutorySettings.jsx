@@ -1,12 +1,11 @@
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useSettingsForm } from './useSettingsForm';
 
 const FIELDS = ['npfEmployerNumber', 'npfZone', 'accEmpNumber1', 'accEmpNumber2'];
 
 export default function StatutorySettings() {
-  const { form, set, save, isSaving, isLoading } = useSettingsForm(FIELDS);
+  const { form, set, isSaving } = useSettingsForm(FIELDS);
 
   return (
     <div className="space-y-4">
@@ -15,9 +14,9 @@ export default function StatutorySettings() {
           <h2 className="font-heading text-lg">Statutory / Fund Details</h2>
           <p className="text-sm text-muted">Employer numbers shown on NPF and ACC schedule sheets.</p>
         </div>
-        <Button type="button" onClick={save} disabled={isSaving || isLoading}>
-          {isSaving ? 'Saving…' : 'Save'}
-        </Button>
+        <span className="text-xs text-muted px-2 py-1.5 rounded-lg bg-slate-50 border border-border">
+          {isSaving ? 'Saving…' : 'Autosaves as you type'}
+        </span>
       </div>
 
       <Card className="space-y-4">

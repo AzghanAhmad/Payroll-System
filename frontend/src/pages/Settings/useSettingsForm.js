@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { settingsApi } from '@/services';
 
-/** Shared settings form state + save for settings subpages */
+/** Shared settings form state + autosave for settings subpages */
 export function useSettingsForm(pickFields) {
   const qc = useQueryClient();
   const { data: settings, isLoading } = useQuery({
@@ -12,16 +12,26 @@ export function useSettingsForm(pickFields) {
   });
   const [form, setForm] = useState({});
   const [logo, setLogo] = useState(null);
+  const dirty = useRef(false);
+  const hydrated = useRef(false);
 
   useEffect(() => {
     if (settings) {
       const { _id, __v, createdAt, updatedAt, _applied, ...rest } = settings;
       setForm(rest);
+      dirty.current = false;
+      hydrated.current = true;
     }
   }, [settings]);
 
   const set = useCallback((key, value) => {
+    dirty.current = true;
     setForm((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const setLogoDirty = useCallback((file) => {
+    dirty.current = true;
+    setLogo(file);
   }, []);
 
   const saveMut = useMutation({
@@ -73,14 +83,7 @@ export function useSettingsForm(pickFields) {
       return settingsApi.update(payload);
     },
     onSuccess: (data) => {
-      const applied = data?._applied;
-      if (applied) {
-        toast.success(
-          `Settings saved — updated ${applied.timesheets || 0} timesheet(s), ${applied.payrollCount || 0} payroll(s), ${applied.payslipCount || 0} payslip(s)`
-        );
-      } else {
-        toast.success('Settings saved');
-      }
+      dirty.current = false;
       setLogo(null);
       if (data?.currency) localStorage.setItem('currency', data.currency);
       qc.invalidateQueries({ queryKey: ['settings'] });
@@ -92,17 +95,29 @@ export function useSettingsForm(pickFields) {
       qc.invalidateQueries({ queryKey: ['leave-dashboard'] });
       qc.invalidateQueries({ queryKey: ['leave-staff-sheets'] });
       qc.invalidateQueries({ queryKey: ['statutory'] });
+      qc.invalidateQueries({ queryKey: ['month-control'] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
+    onError: (err) => toast.error(err.response?.data?.message || 'Autosave failed'),
   });
+
+  // Autosave when form/logo changes
+  useEffect(() => {
+    if (!hydrated.current || !dirty.current) return undefined;
+    const t = setTimeout(() => {
+      if (dirty.current) saveMut.mutate();
+    }, 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, logo]);
 
   return {
     form,
     set,
     logo,
-    setLogo,
+    setLogo: setLogoDirty,
     isLoading,
     save: () => saveMut.mutate(),
     isSaving: saveMut.isPending,
+    autosave: true,
   };
 }

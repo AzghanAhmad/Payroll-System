@@ -112,6 +112,7 @@ export const leaveApi = {
   create: (data) => api.post('/leave', data).then((r) => r.data),
   update: (id, data) => api.put(`/leave/${id}`, data).then((r) => r.data),
   remove: (id) => api.delete(`/leave/${id}`).then((r) => r.data),
+  emailBalance: (data) => api.post('/leave/email-balance', data).then((r) => r.data),
 };
 
 export const calendarApi = {
@@ -140,5 +141,6 @@ export const opsApi = {
 
 export const statutoryApi = {
   sheets: (params) => api.get('/statutory/sheets', { params }).then((r) => r.data),
+  saveSheets: (data) => api.put('/statutory/sheets', data).then((r) => r.data),
   iouTracker: (params) => api.get('/statutory/iou-tracker', { params }).then((r) => r.data),
 };

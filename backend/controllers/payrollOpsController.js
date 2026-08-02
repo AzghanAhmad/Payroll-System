@@ -172,22 +172,24 @@ export const saveFullPayrollPdfs = asyncHandler(async (req, res) => {
 
   for (const p of payslips) {
     if (p.pdfPath) {
-      const abs = path.isAbsolute(p.pdfPath)
-        ? p.pdfPath
-        : path.join(uploadRoot, '..', p.pdfPath.replace(/^\//, ''));
-      // pdfPath stored like /uploads/exports/...
-      const fromUploads = path.join(process.cwd(), p.pdfPath.replace(/^\//, ''));
-      const candidates = [abs, fromUploads, path.join(uploadRoot, 'exports', path.basename(p.pdfPath || ''))];
+      const rel = String(p.pdfPath).replace(/^\/+/, '');
+      const candidates = [
+        path.isAbsolute(p.pdfPath) ? p.pdfPath : null,
+        path.join(uploadRoot, rel.replace(/^uploads[\\/]/, '')),
+        path.join(uploadRoot, '..', rel),
+        path.join(process.cwd(), 'backend', rel),
+        path.join(process.cwd(), rel),
+      ].filter(Boolean);
       for (const src of candidates) {
-        if (src && fs.existsSync(src)) {
-          const dest = path.join(
-            folder,
-            'payslips',
-            path.basename(src)
-          );
-          fs.mkdirSync(path.dirname(dest), { recursive: true });
-          fs.copyFileSync(src, dest);
-          break;
+        try {
+          if (src && fs.existsSync(src)) {
+            const dest = path.join(folder, 'payslips', path.basename(src));
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            break;
+          }
+        } catch {
+          /* try next */
         }
       }
     }

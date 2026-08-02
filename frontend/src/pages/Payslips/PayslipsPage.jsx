@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Download, Mail, Printer, Eye, FileStack } from 'lucide-react';
+import { Download, Printer, Eye, FileStack } from 'lucide-react';
 import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { ShareMenu } from '@/components/ui/ShareMenu';
 import { payslipApi, departmentApi, payrollApi } from '@/services';
 import { formatMoney, formatNumber, MONTHS, yearOptions } from '@/utils/helpers';
 import { formatFullDate, getWeekPeriod } from '@/utils/weekPeriod';
@@ -91,13 +92,18 @@ export default function PayslipsPage() {
   };
 
   const email = async (id) => {
-    try {
-      await payslipApi.email(id);
-      toast.success('Payslip emailed');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Email failed');
-    }
+    await payslipApi.email(id);
+    toast.success('Payslip emailed');
   };
+
+  const shareTextFor = (p) =>
+    [
+      `Payslip — ${p.employee?.fullName || ''}`,
+      p.periodLabel || '',
+      `Gross: ${formatMoney(p.grossPay)}`,
+      `Net: ${formatMoney(p.netPay)}`,
+      `IOU deduction: ${formatMoney(p.iouDeduction)}`,
+    ].join('\n');
 
   const printPayslip = async (id) => {
     try {
@@ -265,10 +271,15 @@ export default function PayslipsPage() {
                       <td className="px-3 py-2 text-right">{formatMoney(p.teaFund)}</td>
                       <td className="px-3 py-2 text-right font-semibold text-primary">{formatMoney(p.netPay)}</td>
                       <td className="px-3 py-2">
-                        <div className="flex justify-end gap-1">
+                        <div className="flex justify-end gap-1 items-center">
                           <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => setSelected(p)}><Eye size={16} /></button>
                           <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => download(p._id)}><Download size={16} /></button>
-                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => email(p._id)}><Mail size={16} /></button>
+                          <ShareMenu
+                            title={`Payslip — ${p.employee?.fullName || ''}`}
+                            text={shareTextFor(p)}
+                            onEmail={() => email(p._id)}
+                            emailLabel="Email to staff"
+                          />
                           <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => printPayslip(p._id)}><Printer size={16} /></button>
                         </div>
                       </td>
@@ -307,6 +318,7 @@ export default function PayslipsPage() {
             payslip={selected}
             onDownload={() => download(selected._id)}
             onEmail={() => email(selected._id)}
+            shareText={shareTextFor(selected)}
             onPrint={() => printPayslip(selected._id)}
           />
         )}
@@ -366,7 +378,7 @@ function StaffPayslipCard({ payslip: p, onOpen, onDownload }) {
   );
 }
 
-function PayslipDetail({ payslip: p, onDownload, onEmail, onPrint }) {
+function PayslipDetail({ payslip: p, onDownload, onEmail, onPrint, shareText }) {
   return (
     <div className="space-y-4 text-sm">
       <div className="grid grid-cols-2 gap-2">
@@ -412,9 +424,14 @@ function PayslipDetail({ payslip: p, onDownload, onEmail, onPrint }) {
         {p.comments && <p className="text-xs text-muted mt-2">Comments: {p.comments}</p>}
       </div>
 
-      <div className="flex gap-2 justify-end">
+      <div className="flex gap-2 justify-end items-center">
         <Button type="button" variant="outline" onClick={onDownload}>Download PDF</Button>
-        <Button type="button" variant="outline" onClick={onEmail}>Email</Button>
+        <ShareMenu
+          title={`Payslip — ${p.employee?.fullName || ''}`}
+          text={shareText || ''}
+          onEmail={onEmail}
+          emailLabel="Email to staff"
+        />
         <Button type="button" onClick={onPrint}>Print</Button>
       </div>
     </div>

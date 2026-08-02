@@ -176,6 +176,47 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
   const lastWeek = Math.max(1, ...payrolls.map((p) => p.week || 1), 4);
   const periodEnd = getWeekPeriod(year, month, Math.min(5, lastWeek)).end;
 
+  // Apply saved cell overrides
+  const StatutoryOverride = (await import('../models/StatutoryOverride.js')).default;
+  const overrides = await StatutoryOverride.find({ year, month });
+  const applyOverride = (sheet, rows, keyFn) => {
+    for (const o of overrides.filter((x) => x.sheet === sheet)) {
+      const row = rows.find((r) => keyFn(r) === o.rowKey);
+      if (!row) continue;
+      if (o.week && Array.isArray(row.weeks)) {
+        const wi = Number(o.week) - 1;
+        if (row.weeks[wi] && o.field in row.weeks[wi]) {
+          row.weeks[wi][o.field] = Number(o.value) || 0;
+        }
+      } else if (o.field in row) {
+        row[o.field] = typeof row[o.field] === 'number' ? Number(o.value) || 0 : o.value;
+      }
+    }
+  };
+  applyOverride('paye', paye, (r) => String(r.employeeId || r.row));
+  applyOverride('npf', npf, (r) => String(r.npfNumber || r.name));
+  applyOverride('acc', acc, (r) => String(r.row || r.name));
+
+  for (const r of paye) {
+    r.total12 = round2((Number(r.week1) || 0) + (Number(r.week2) || 0));
+    r.total34 = round2((Number(r.week3) || 0) + (Number(r.week4) || 0));
+    r.total5 = round2(Number(r.week5) || 0);
+    r.grandTotal = round2(r.total12 + r.total34 + r.total5);
+  }
+  for (const r of npf) {
+    r.total = round2((r.weeks || []).reduce((s, x) => s + (Number(x.employee) || 0) + (Number(x.employer) || 0), 0));
+  }
+  for (const r of acc) {
+    r.total = round2((r.weeks || []).reduce((s, x) => s + (Number(x.employee) || 0) + (Number(x.employer) || 0), 0));
+  }
+
+  // Recompute totals after overrides
+  const sumField2 = (list, pick) => round2(list.reduce((s, r) => s + pick(r), 0));
+  const payeTotal2 = sumField2(paye, (r) => Number(r.grandTotal) || 0);
+  const payeTaxTotal2 = sumField2(paye, (r) => Number(r.totalTax) || 0);
+  const npfTotal2 = sumField2(npf, (r) => Number(r.total) || 0);
+  const accTotal2 = sumField2(acc, (r) => Number(r.total) || 0);
+
   res.json({
     year,
     month,
@@ -197,28 +238,56 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     },
     paye: {
       rows: paye,
-      totals: { gross: payeTotal, tax: payeTaxTotal },
+      totals: { gross: payeTotal2, tax: payeTaxTotal2 },
     },
     npf: {
       rows: npf,
-      paymentsTotal: npfTotal,
+      paymentsTotal: npfTotal2,
       loanRepayments: [],
       voluntary: [],
     },
     acc: {
       rows: acc,
-      total: accTotal,
+      total: accTotal2,
       byDepartment: accByDept,
     },
     statutoryTotals: {
-      paye: payeTaxTotal,
-      npf: npfTotal,
-      acc: accTotal,
-      total: round2(payeTaxTotal + npfTotal + accTotal),
-      // Also expose gross-based PAYE sheet total for reference
-      payeGross: payeTotal,
+      paye: payeTaxTotal2,
+      npf: npfTotal2,
+      acc: accTotal2,
+      total: round2(payeTaxTotal2 + npfTotal2 + accTotal2),
+      payeGross: payeTotal2,
     },
   });
+});
+
+export const saveStatutoryOverrides = asyncHandler(async (req, res) => {
+  const { year, month, overrides } = req.body;
+  if (!year || !month || !Array.isArray(overrides)) {
+    throw new AppError('year, month and overrides[] required');
+  }
+  const StatutoryOverride = (await import('../models/StatutoryOverride.js')).default;
+  const results = [];
+  for (const o of overrides) {
+    if (!o.sheet || !o.rowKey || !o.field) continue;
+    const doc = await StatutoryOverride.findOneAndUpdate(
+      {
+        year: Number(year),
+        month: Number(month),
+        sheet: o.sheet,
+        rowKey: String(o.rowKey),
+        week: o.week != null ? Number(o.week) : 0,
+        field: o.field,
+      },
+      {
+        value: o.value,
+        updatedBy: req.user?._id,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    results.push(doc);
+  }
+  res.json({ saved: results.length, overrides: results });
 });
 
 /**
@@ -298,13 +367,17 @@ export const getIouTracker = asyncHandler(async (req, res) => {
     const empLoans = loans.filter(
       (l) => String(l.employee?._id || l.employee) === empId
     );
-    // Prefer active loan, else most recent
+    // Prefer active loan with positive amount (avoids $0 shell loans hiding real IOUs)
+    const activePositive = empLoans
+      .filter((l) => l.status === 'active' && Number(l.amount) > 0)
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     const primary =
+      activePositive[0] ||
       empLoans.find((l) => l.status === 'active') ||
       empLoans.sort((a, b) => new Date(b.date) - new Date(a.date))[0] ||
       null;
 
-    const amount = round2(primary?.amount || 0);
+    const amount = round2(empLoans.reduce((s, l) => s + (l.amount || 0), 0));
     const repaidLifetime = round2(
       empLoans.reduce((s, l) => s + (l.amountPaid || 0), 0)
     );
@@ -314,8 +387,30 @@ export const getIouTracker = asyncHandler(async (req, res) => {
 
     const weekPays = iouByEmpWeek.get(empId) || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 
-    // Excel style: start from IOU amount, subtract each week payment
-    let running = amount;
+    // Payments recorded before this month (carry-forward)
+    let priorPaid = 0;
+    for (const loan of empLoans) {
+      for (const wp of loan.weekPayments || []) {
+        const before =
+          wp.year < year || (wp.year === year && wp.month < month);
+        if (before) priorPaid = round2(priorPaid + Number(wp.amount || 0));
+      }
+      for (const h of loan.history || []) {
+        if (h.method !== 'manual' && h.method !== 'cash') continue;
+        const hd = h.date ? new Date(h.date) : null;
+        if (!hd) continue;
+        if (
+          hd.getFullYear() < year ||
+          (hd.getFullYear() === year && hd.getMonth() + 1 < month)
+        ) {
+          priorPaid = round2(priorPaid + Number(h.amount || 0));
+        }
+      }
+    }
+
+    // Opening = total issued − paid before this month (carries outstanding across months)
+    let running = round2(Math.max(0, amount - priorPaid));
+    const openingBalance = running;
     const weeks = [];
     let monthRepaid = 0;
     for (let w = 1; w <= 5; w++) {
@@ -328,12 +423,12 @@ export const getIouTracker = asyncHandler(async (req, res) => {
     const status =
       amount <= 0
         ? 'No IOU'
-        : running <= 0
+        : balance <= 0 && running <= 0
           ? 'Paid'
           : 'Outstanding';
 
     totalIssued = round2(totalIssued + amount);
-    totalRepaid = round2(totalRepaid + monthRepaid);
+    totalRepaid = round2(totalRepaid + repaidLifetime);
 
     return {
       employeeId: emp._id,
@@ -341,8 +436,9 @@ export const getIouTracker = asyncHandler(async (req, res) => {
       staffName: emp.fullName,
       startWeek: primary?.startWeek || (amount > 0 ? 1 : null),
       iouAmount: amount,
+      openingBalance,
       weeks,
-      totalRepaid: monthRepaid,
+      totalRepaid: repaidLifetime,
       dateLoaned: primary?.date || null,
       purpose: primary?.reason || '',
       status,

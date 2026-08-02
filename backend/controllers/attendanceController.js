@@ -184,8 +184,16 @@ export const importAttendanceExcel = asyncHandler(async (req, res) => {
     const { headerRow, colAc, colName, colDate, colIn, colOut } = header;
 
     const employees = await Employee.find({ status: 'active' });
+    const normalizeName = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s']/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
     const byId = new Map(employees.map((e) => [String(e.employeeId).toLowerCase(), e]));
-    const byName = new Map(employees.map((e) => [String(e.fullName).toLowerCase(), e]));
+    const byName = new Map(employees.map((e) => [normalizeName(e.fullName), e]));
 
     const matchEmployee = (acNo, name) => {
       if (acNo != null && String(acNo).trim() !== '') {
@@ -196,10 +204,13 @@ export const importAttendanceExcel = asyncHandler(async (req, res) => {
         }
       }
       if (name) {
-        const n = String(name).trim().toLowerCase();
+        const n = normalizeName(name);
         if (byName.has(n)) return byName.get(n);
         for (const [k, e] of byName) {
+          if (k === n) return e;
           if (k.startsWith(n) || n.startsWith(k.split(' ')[0])) return e;
+          const words = n.split(' ').filter(Boolean);
+          if (words.length >= 2 && words.every((w) => k.includes(w))) return e;
         }
       }
       return null;
@@ -298,6 +309,10 @@ export const importAttendanceExcel = asyncHandler(async (req, res) => {
       if (!entry.days[dayKey]) entry.days[dayKey] = {};
       entry.days[dayKey].clockIn = clockIn;
       if (clockOut) entry.days[dayKey].clockOut = clockOut;
+      // Default 30‑min break on import unless user already overrode
+      if (clockIn && clockOut && !entry.days[dayKey].breakManual) {
+        entry.days[dayKey].breakHours = 0.5;
+      }
       recalculateEntry(entry, emp.hourlyRate || 0, settings);
 
       updates.push({

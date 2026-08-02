@@ -9,7 +9,7 @@ export const CURRENCIES = [
   { code: 'CNY', symbol: '¥' },
   { code: 'INR', symbol: '₹' },
   { code: 'PKR', symbol: 'Rs' },
-  { code: 'WST', symbol: 'ST$' },
+  { code: 'WST', symbol: '$' },
   { code: 'FJD', symbol: 'FJ$' },
   { code: 'PGK', symbol: 'K' },
   { code: 'TOP', symbol: 'T$' },

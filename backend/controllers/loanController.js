@@ -72,12 +72,43 @@ export const createLoan = asyncHandler(async (req, res) => {
   if (!employee || amount == null || amount === '') {
     throw new AppError('employee and amount are required');
   }
+  // Guard against orphan loans (empty / invalid ObjectId)
+  if (!String(employee).match(/^[a-f\d]{24}$/i)) {
+    throw new AppError('Select a valid staff member');
+  }
   const amt = Number(amount);
   if (!amt || amt <= 0) throw new AppError('Valid IOU amount required');
 
   const installment = Number(req.body.installment) > 0 ? Number(req.body.installment) : amt;
 
-  const loan = await Loan.create({
+  // Prefer updating an existing active IOU for this staff (avoid duplicate / $0 shells)
+  let loan = await Loan.findOne({ employee, status: 'active' }).sort({ amount: -1, createdAt: -1 });
+  if (loan) {
+    if (Number(loan.amount) <= 0) {
+      loan.amount = amt;
+      loan.remainingBalance = amt;
+      loan.amountPaid = 0;
+    } else {
+      loan.amount = round2(Number(loan.amount) + amt);
+      loan.remainingBalance = round2(Number(loan.remainingBalance || 0) + amt);
+    }
+    if (date) loan.date = date;
+    if (reason) loan.reason = reason || loan.reason;
+    if (req.body.startWeek != null) loan.startWeek = Number(req.body.startWeek) || loan.startWeek;
+    loan.installment = installment;
+    await loan.save();
+    // Remove other empty active shells for same employee
+    await Loan.deleteMany({
+      employee,
+      status: 'active',
+      amount: { $lte: 0 },
+      _id: { $ne: loan._id },
+    });
+    await loan.populate('employee', 'employeeId fullName');
+    return res.status(200).json(loan);
+  }
+
+  loan = await Loan.create({
     employee,
     amount: amt,
     date: date || new Date(),

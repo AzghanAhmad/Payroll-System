@@ -93,7 +93,11 @@ export const calculatePayrollLine = ({
   const employerNpf = round2(grossPay * (settings.employerNpfRate ?? 0.1));
   const employeeAcc = round2(grossPay * (settings.employeeAccRate ?? 0.01));
   const employerAcc = round2(grossPay * (settings.employerAccRate ?? 0.01));
-  const teaFund = round2(settings.teaFundAmount ?? 0);
+  const teaFund = round2(
+    employee.teaFundAmount != null && employee.teaFundAmount !== ''
+      ? Number(employee.teaFundAmount)
+      : settings.teaFundAmount ?? 0
+  );
   const tax = calcPeriodTax(grossPay, settings.taxBrackets || [], periodsPerYear);
   const iou = round2(Math.min(iouDeduction, Math.max(0, grossPay - employeeNpf - employeeAcc - tax - teaFund)));
   const netPay = round2(grossPay - employeeNpf - employeeAcc - tax - teaFund - iou);

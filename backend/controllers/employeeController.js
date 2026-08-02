@@ -82,18 +82,103 @@ export const getEmployee = asyncHandler(async (req, res) => {
   res.json(employee);
 });
 
+const attachPhotoFromUpload = (data, file) => {
+  if (!file) return;
+  data.photo = `/uploads/photos/${file.filename}`;
+  try {
+    const buf = fs.readFileSync(file.path);
+    const mime = file.mimetype || 'image/jpeg';
+    // Cap stored size (~1.5MB binary) to stay within Mongo doc limits
+    if (buf.length <= 1.5 * 1024 * 1024) {
+      data.photoData = `data:${mime};base64,${buf.toString('base64')}`;
+    }
+  } catch {
+    /* disk read failed — path still saved */
+  }
+};
+
 export const createEmployee = asyncHandler(async (req, res) => {
   const data = { ...req.body };
   data.employeeId = await allocateEmployeeId(data.employeeId);
-  if (req.file) data.photo = `/uploads/photos/${req.file.filename}`;
+  attachPhotoFromUpload(data, req.file);
   if (data.hourlyRate != null && data.hourlyRate !== '') data.hourlyRate = Number(data.hourlyRate);
+  if (data.teaFundAmount === '' || data.teaFundAmount == null) delete data.teaFundAmount;
+  else data.teaFundAmount = Number(data.teaFundAmount);
   if (!data.department) delete data.department;
   if (data.dob === '') delete data.dob;
   if (data.hireDate === '') delete data.hireDate;
 
+  const missing = [];
+  if (!data.fullName?.trim()) missing.push('fullName');
+  if (!data.hireDate) missing.push('hireDate');
+  if (data.hourlyRate == null || Number(data.hourlyRate) <= 0) missing.push('hourlyRate');
+  if (!data.department) missing.push('department');
+  if (!data.bank?.trim()) missing.push('bank');
+  if (!data.accountNumber?.trim()) missing.push('accountNumber');
+  if (!data.npfNumber?.trim()) missing.push('npfNumber');
+  if (!data.position?.trim()) missing.push('position');
+  if (missing.length) {
+    throw new AppError(
+      `Cannot add employee — required for payroll/leave/payslips: ${missing.join(', ')}`,
+      400
+    );
+  }
+
   try {
     const employee = await Employee.create(data);
     await employee.populate('department', 'name code');
+
+    // Ensure current (and nearby) timesheet months include this employee
+    const Settings = (await import('../models/Settings.js')).default;
+    const Timesheet = (await import('../models/Timesheet.js')).default;
+    const { ensureTimesheetWeeks, emptyDays } = await import('../services/timesheetService.js');
+    let settings = await Settings.findOne();
+    const now = new Date();
+    const targetYear = settings?.currentPayrollYear || now.getFullYear();
+    const targetMonth = settings?.currentPayrollMonth || now.getMonth() + 1;
+
+    const ensureEmpOnSheet = async (year, month) => {
+      let ts = await Timesheet.findOne({ year, month });
+      if (!ts) {
+        ts = await Timesheet.create({
+          year,
+          month,
+          weeks: [1, 2, 3, 4, 5].map((weekNumber) => ({ weekNumber, entries: [] })),
+          createdBy: req.user?._id,
+        });
+      }
+      ensureTimesheetWeeks(ts);
+      let changed = false;
+      for (const week of ts.weeks) {
+        const exists = week.entries.some(
+          (e) => String(e.employee?._id || e.employee) === String(employee._id)
+        );
+        if (!exists) {
+          week.entries.push({
+            employee: employee._id,
+            days: emptyDays(),
+            weeklyHours: 0,
+            weeklyCost: 0,
+          });
+          changed = true;
+        }
+      }
+      if (changed) await ts.save();
+      return ts;
+    };
+
+    if (employee.status === 'active') {
+      await ensureEmpOnSheet(targetYear, targetMonth);
+      // Also attach to any other timesheets already open this year
+      const otherSheets = await Timesheet.find({
+        year: targetYear,
+        month: { $ne: targetMonth },
+      }).select('_id year month');
+      for (const s of otherSheets) {
+        await ensureEmpOnSheet(s.year, s.month);
+      }
+    }
+
     res.status(201).json(employee);
   } catch (err) {
     if (err?.code === 11000 && err?.keyPattern?.employeeId) {
@@ -105,8 +190,14 @@ export const createEmployee = asyncHandler(async (req, res) => {
 
 export const updateEmployee = asyncHandler(async (req, res) => {
   const data = { ...req.body };
-  if (req.file) data.photo = `/uploads/photos/${req.file.filename}`;
-  if (data.hourlyRate != null) data.hourlyRate = Number(data.hourlyRate);
+  attachPhotoFromUpload(data, req.file);
+  if (data.hourlyRate != null && data.hourlyRate !== '') data.hourlyRate = Number(data.hourlyRate);
+  if (data.teaFundAmount === '') data.teaFundAmount = null;
+  else if (data.teaFundAmount != null) data.teaFundAmount = Number(data.teaFundAmount);
+  if (data.dob === '') data.dob = undefined;
+  if (data.hireDate === '') data.hireDate = undefined;
+  if (data.department === '') data.department = undefined;
+
   const employee = await Employee.findByIdAndUpdate(req.params.id, data, {
     new: true,
     runValidators: true,

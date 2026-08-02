@@ -10,7 +10,7 @@ export const CURRENCIES = [
   { code: 'CNY', name: 'Chinese Yuan', symbol: '¥' },
   { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
   { code: 'PKR', name: 'Pakistani Rupee', symbol: 'Rs' },
-  { code: 'WST', name: 'Samoan Tālā', symbol: 'ST$' },
+  { code: 'WST', name: 'Samoan Tālā', symbol: '$' },
   { code: 'FJD', name: 'Fijian Dollar', symbol: 'FJ$' },
   { code: 'PGK', name: 'Papua New Guinean Kina', symbol: 'K' },
   { code: 'TOP', name: 'Tongan Paʻanga', symbol: 'T$' },

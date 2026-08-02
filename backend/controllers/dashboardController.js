@@ -286,6 +286,39 @@ const buildLeaveSummary = async (asOf = new Date()) => {
 };
 
 export const getDashboard = asyncHandler(async (req, res) => {
+  // Payday reminders (idempotent per day)
+  try {
+    const { generatePayrollSchedule } = await import('../services/payrollSchedule.js');
+    const now = new Date();
+    const today0 = startOfDay(now);
+    const sched = generatePayrollSchedule(now.getFullYear());
+    for (const row of sched) {
+      const payday = startOfDay(new Date(row.payday));
+      const diffDays = Math.round((payday - today0) / 86400000);
+      if (diffDays === 0 || diffDays === 1) {
+        const title = diffDays === 0 ? 'Payday today' : 'Payday tomorrow';
+        const dayStart = new Date(today0);
+        const exists = await Notification.findOne({
+          title,
+          createdAt: { $gte: dayStart },
+        });
+        if (!exists) {
+          await Notification.create({
+            title,
+            message:
+              diffDays === 0
+                ? `Today is payday (${payday.toLocaleDateString('en-GB')}). Process payroll and payslips.`
+                : `Payday is tomorrow (${payday.toLocaleDateString('en-GB')}). Prepare payslips.`,
+            type: 'warning',
+            link: '/payroll',
+          });
+        }
+      }
+    }
+  } catch {
+    /* non-fatal */
+  }
+
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;

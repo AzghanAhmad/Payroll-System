@@ -67,12 +67,16 @@ export default function PayrollPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => weeklyMut.mutate()} disabled={weeklyMut.isPending}>
-              Generate Weekly
+              {weeklyMut.isPending ? 'Generating…' : 'Generate Weekly'}
             </Button>
             <Button variant="secondary" onClick={() => monthlyMut.mutate()} disabled={monthlyMut.isPending}>
               Generate Monthly
             </Button>
           </div>
+          <p className="w-full text-xs text-muted">
+            Payroll does not auto-refresh. After adding employees or updating timesheets, click{' '}
+            <strong>Generate Weekly</strong> for this week to rebuild lines (includes tea fund per employee).
+          </p>
         </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

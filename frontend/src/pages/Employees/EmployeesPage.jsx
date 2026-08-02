@@ -18,6 +18,7 @@ import { FileUpload } from '@/components/ui/FileUpload';
 import { Modal, Badge } from '@/components/ui/Modal';
 import { employeeApi, departmentApi } from '@/services';
 import { formatMoney } from '@/utils/helpers';
+import { mediaUrl } from '@/utils/mediaUrl';
 
 const EMPTY_EMPLOYEES = [];
 
@@ -29,13 +30,14 @@ const schema = z.object({
   dob: z.string().optional(),
   village: z.string().optional(),
   address: z.string().optional(),
-  department: z.string().optional(),
-  position: z.string().optional(),
-  hourlyRate: z.coerce.number().min(0),
-  hireDate: z.string().optional(),
-  bank: z.string().optional(),
-  accountNumber: z.string().optional(),
-  npfNumber: z.string().optional(),
+  department: z.string().min(1, 'Department required'),
+  position: z.string().min(1, 'Position required'),
+  hourlyRate: z.coerce.number().gt(0, 'Hourly rate must be greater than 0'),
+  teaFundAmount: z.union([z.coerce.number().min(0), z.literal('')]).optional(),
+  hireDate: z.string().min(1, 'Hire date required for leave'),
+  bank: z.string().min(1, 'Bank required for payslips'),
+  accountNumber: z.string().min(1, 'Account number required'),
+  npfNumber: z.string().min(1, 'NPF number required'),
   status: z.enum(['active', 'inactive', 'terminated']),
   notes: z.string().optional(),
 });
@@ -112,8 +114,12 @@ export default function EmployeesPage() {
     onSuccess: () => {
       toast.success(editing ? 'Employee updated' : 'Employee created');
       qc.invalidateQueries({ queryKey: ['employees'] });
-      qc.invalidateQueries({ queryKey: ['timesheet'] });
+      qc.invalidateQueries({ queryKey: ['timesheet'], refetchType: 'all' });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['payrolls'] });
+      qc.invalidateQueries({ queryKey: ['payroll-summary'] });
+      qc.invalidateQueries({ queryKey: ['leave'] });
+      qc.invalidateQueries({ queryKey: ['iou-tracker'] });
       setOpen(false);
       setEditing(null);
       setPhoto(null);
@@ -152,6 +158,7 @@ export default function EmployeesPage() {
       department: row.department?._id || row.department || '',
       position: row.position || '',
       hourlyRate: row.hourlyRate || 0,
+      teaFundAmount: row.teaFundAmount ?? '',
       hireDate: row.hireDate ? String(row.hireDate).slice(0, 10) : '',
       bank: row.bank || '',
       accountNumber: row.accountNumber || '',
@@ -176,7 +183,7 @@ export default function EmployeesPage() {
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             {row.original.photo ? (
-              <img src={row.original.photo} alt="" className="h-8 w-8 rounded-full object-cover" />
+              <img src={mediaUrl(row.original.photo)} alt="" className="h-8 w-8 rounded-full object-cover" />
             ) : (
               <div className="h-8 w-8 rounded-full bg-blue-100 text-primary flex items-center justify-center text-xs font-bold">
                 {row.original.fullName?.[0]}
@@ -404,20 +411,27 @@ export default function EmployeesPage() {
           <Input label="Email" type="email" {...form.register('email')} />
           <Input label="Phone" {...form.register('phone')} />
           <Input label="Date of Birth" type="date" {...form.register('dob')} />
-          <Input label="Hire Date" type="date" {...form.register('hireDate')} />
+          <Input label="Hire Date" type="date" {...form.register('hireDate')} error={form.formState.errors.hireDate?.message} />
           <Input label="Village" {...form.register('village')} />
           <Input label="Address" {...form.register('address')} />
-          <Select label="Department" {...form.register('department')}>
+          <Select label="Department" {...form.register('department')} error={form.formState.errors.department?.message}>
             <option value="">Select…</option>
             {departments.map((d) => (
               <option key={d._id} value={d._id}>{d.name}</option>
             ))}
           </Select>
-          <Input label="Position" {...form.register('position')} />
-          <Input label="Hourly Rate" type="number" step="0.01" {...form.register('hourlyRate')} />
-          <Input label="Bank" {...form.register('bank')} />
-          <Input label="Account Number" {...form.register('accountNumber')} />
-          <Input label="NPF Number" {...form.register('npfNumber')} />
+          <Input label="Position" {...form.register('position')} error={form.formState.errors.position?.message} />
+          <Input label="Hourly Rate" type="number" step="0.01" {...form.register('hourlyRate')} error={form.formState.errors.hourlyRate?.message} />
+          <Input
+            label="Tea Fund (weekly)"
+            type="number"
+            step="0.01"
+            placeholder="Default from settings"
+            {...form.register('teaFundAmount')}
+          />
+          <Input label="Bank" {...form.register('bank')} error={form.formState.errors.bank?.message} />
+          <Input label="Account Number" {...form.register('accountNumber')} error={form.formState.errors.accountNumber?.message} />
+          <Input label="NPF Number" {...form.register('npfNumber')} error={form.formState.errors.npfNumber?.message} />
           <Select label="Status" {...form.register('status')}>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
@@ -428,10 +442,13 @@ export default function EmployeesPage() {
             label="Photo"
             accept="image/*"
             value={photo}
-            previewUrl={!photo && editing?.photo ? editing.photo : undefined}
+            previewUrl={!photo && editing?.photo ? mediaUrl(editing.photo) : undefined}
             onChange={setPhoto}
-            hint="Employee photo — PNG or JPG"
+            hint="Employee photo — PNG or JPG (saved to server)"
           />
+          <p className="sm:col-span-2 text-xs text-muted">
+            Hire date, department, position, rate, bank, account and NPF are required so leave, payroll and payslips work correctly.
+          </p>
           <div className="sm:col-span-2">
             <Textarea label="Notes" {...form.register('notes')} />
           </div>

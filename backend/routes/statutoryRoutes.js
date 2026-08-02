@@ -6,6 +6,7 @@ const router = Router();
 router.use(protect);
 
 router.get('/sheets', ctrl.getStatutorySheets);
+router.put('/sheets', ctrl.saveStatutoryOverrides);
 router.get('/iou-tracker', ctrl.getIouTracker);
 
 export default router;

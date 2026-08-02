@@ -5,6 +5,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Textarea } from '@/components/ui/Input';
+import { ShareMenu } from '@/components/ui/ShareMenu';
 import { leaveApi, employeeApi } from '@/services';
 import { formatNumber } from '@/utils/helpers';
 
@@ -177,6 +178,7 @@ export default function LeavePage() {
                       ))}
                       <th className="px-2 py-2">Status</th>
                       <th className="px-2 py-2 text-right">Total Left</th>
+                      <th className="px-2 py-2 text-center">Share</th>
                     </tr>
                     <tr className="bg-slate-50 text-[10px] text-muted">
                       <th colSpan={5} />
@@ -187,14 +189,28 @@ export default function LeavePage() {
                           <th className="px-1 py-1 text-right">Left</th>
                         </Fragment>
                       ))}
-                      <th colSpan={2} />
+                      <th colSpan={3} />
                     </tr>
                   </thead>
                   <tbody>
                     {isLoading && (
-                      <tr><td className="px-4 py-6 text-muted" colSpan={22}>Loading…</td></tr>
+                      <tr><td className="px-4 py-6 text-muted" colSpan={23}>Loading…</td></tr>
                     )}
-                    {(dash?.staff || []).map((row) => (
+                    {(dash?.staff || []).map((row) => {
+                      const balanceText = [
+                        `Leave balance — ${row.staffName}`,
+                        `As of ${asOf}`,
+                        ...TYPE_ORDER.map((t) => {
+                          const x = row.types[t] || {};
+                          return `${labels[t] || t}: Ent ${formatNumber(x.entitlement)} · Used ${formatNumber(x.used)} · Left ${formatNumber(x.left)}`;
+                        }),
+                        `Total left: ${formatNumber(row.totalLeaveLeft)}`,
+                        row.nextAnniversary ? `Next reset: ${fmtDate(row.nextAnniversary)}` : '',
+                      ]
+                        .filter(Boolean)
+                        .join('\n');
+
+                      return (
                       <tr key={row.employeeId} className="border-b border-border/50 hover:bg-slate-50/70">
                         <td className="px-2 py-2 font-medium whitespace-nowrap">{row.staffName}</td>
                         <td className="px-2 py-2 whitespace-nowrap">{fmtDate(row.hireDate)}</td>
@@ -213,8 +229,23 @@ export default function LeavePage() {
                         })}
                         <td className="px-2 py-2 whitespace-nowrap">{row.status}</td>
                         <td className="px-2 py-2 text-right font-semibold">{formatNumber(row.totalLeaveLeft)}</td>
+                        <td className="px-2 py-2 text-center">
+                          <ShareMenu
+                            title={`Leave balance — ${row.staffName}`}
+                            text={balanceText}
+                            emailLabel="Email to staff"
+                            onEmail={async () => {
+                              const res = await leaveApi.emailBalance({
+                                employeeId: row.employeeId,
+                                asOf,
+                              });
+                              toast.success(res.message || 'Sent');
+                            }}
+                          />
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

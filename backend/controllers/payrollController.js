@@ -256,6 +256,11 @@ export const generateWeekly = asyncHandler(async (req, res) => {
     if (line.iouDeduction > 0) {
       await applyIouPayments(line.employee, line.iouDeduction, payroll._id, { year, month, week });
     }
+  }
+
+  // Replace tea-fund ledger for this week (avoid duplicates on regenerate)
+  await TeaFund.deleteMany({ year, month, week });
+  for (const line of lines) {
     if (line.teaFund > 0) {
       await TeaFund.create({
         employee: line.employee,

@@ -1,5 +1,4 @@
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useSettingsForm } from './useSettingsForm';
 
@@ -8,7 +7,7 @@ const FIELDS = [
 ];
 
 export default function LeaveSettings() {
-  const { form, set, save, isSaving, isLoading } = useSettingsForm(FIELDS);
+  const { form, set, isSaving } = useSettingsForm(FIELDS);
 
   return (
     <div className="space-y-4">
@@ -19,9 +18,9 @@ export default function LeaveSettings() {
             Days allowed per leave cycle. Balances reset on each hire-date anniversary.
           </p>
         </div>
-        <Button type="button" onClick={save} disabled={isSaving || isLoading}>
-          {isSaving ? 'Saving…' : 'Save'}
-        </Button>
+        <span className="text-xs text-muted px-2 py-1.5 rounded-lg bg-slate-50 border border-border">
+          {isSaving ? 'Saving…' : 'Autosaves as you type'}
+        </span>
       </div>
 
       <Card className="space-y-4">

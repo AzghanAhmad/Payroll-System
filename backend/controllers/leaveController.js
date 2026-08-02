@@ -58,7 +58,7 @@ export const getLeaveDashboard = asyncHandler(async (req, res) => {
   const entitlements = getEntitlements(settings);
 
   const employees = await Employee.find({ status: { $in: ['active', 'inactive'] } })
-    .select('fullName employeeId hireDate status')
+    .select('fullName employeeId hireDate status email')
     .sort({ fullName: 1 });
 
   const entries = await LeaveEntry.find({ status: 'Approved' }).select(
@@ -70,6 +70,7 @@ export const getLeaveDashboard = asyncHandler(async (req, res) => {
     const row = {
       employeeId: emp._id,
       staffName: emp.fullName,
+      email: emp.email || '',
       hireDate: emp.hireDate || null,
       currentLeaveCycle: cycle.currentCycleStart,
       nextAnniversary: cycle.nextAnniversary,
@@ -278,4 +279,78 @@ export const deleteLeaveEntry = asyncHandler(async (req, res) => {
   const entry = await LeaveEntry.findByIdAndDelete(req.params.id);
   if (!entry) throw new AppError('Leave entry not found', 404);
   res.json({ message: 'Deleted' });
+});
+
+/** Email (or queue) one staff member's leave balance summary */
+export const emailLeaveBalance = asyncHandler(async (req, res) => {
+  const { employeeId, asOf } = req.body;
+  if (!employeeId) throw new AppError('employeeId required');
+
+  const emp = await Employee.findById(employeeId).select('fullName email hireDate');
+  if (!emp) throw new AppError('Employee not found', 404);
+
+  const to = req.body.to || emp.email;
+  if (!to) throw new AppError('No email address — add one on the employee record or pass to=');
+
+  // Reuse dashboard math for one person
+  req.query.asOf = asOf || new Date().toISOString().slice(0, 10);
+  const settings = await getSettings();
+  const entitlements = getEntitlements(settings);
+  const cycle = getLeaveCycle(emp.hireDate, asOf ? new Date(asOf) : new Date());
+  const entries = await LeaveEntry.find({
+    employee: emp._id,
+    status: 'Approved',
+  }).select('leaveType startDate endDate daysCounted');
+
+  const lines = [];
+  let totalLeft = 0;
+  for (const t of LEAVE_TYPES) {
+    const used = round2(
+      entries
+        .filter((e) => {
+          if (e.leaveType !== t) return false;
+          if (!cycle.currentCycleStart) return true;
+          const d = new Date(e.startDate);
+          return d >= cycle.currentCycleStart && d < cycle.nextAnniversary;
+        })
+        .reduce((s, e) => s + (e.daysCounted || 0), 0)
+    );
+    const ent = entitlements[t] ?? 0;
+    const left = round2(Math.max(0, ent - used));
+    totalLeft = round2(totalLeft + left);
+    lines.push(`${LEAVE_TYPE_LABELS[t] || t}: entitlement ${ent}, used ${used}, left ${left}`);
+  }
+
+  const { sendMail } = await import('../services/emailService.js');
+  const subject = `Leave balance — ${emp.fullName}`;
+  const text = [
+    `Dear ${emp.fullName},`,
+    '',
+    `Your leave balance as of ${req.query.asOf}:`,
+    ...lines.map((l) => `• ${l}`),
+    '',
+    `Total days left: ${totalLeft}`,
+    cycle.nextAnniversary
+      ? `Next leave-cycle reset: ${new Date(cycle.nextAnniversary).toLocaleDateString('en-GB')}`
+      : '',
+    '',
+    '— Alpha Group Payroll',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const result = await sendMail({
+    to,
+    subject,
+    text,
+    html: `<p>Dear ${emp.fullName},</p><p>Your leave balance as of <strong>${req.query.asOf}</strong>:</p><ul>${lines
+      .map((l) => `<li>${l}</li>`)
+      .join('')}</ul><p><strong>Total days left:</strong> ${totalLeft}</p>`,
+  });
+
+  res.json({
+    message: result?.skipped ? 'Email skipped (SMTP not configured) — use Share / mailto instead' : 'Leave balance emailed',
+    skipped: Boolean(result?.skipped),
+    to,
+  });
 });
