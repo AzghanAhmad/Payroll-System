@@ -105,9 +105,22 @@ export default function TimesheetsPage() {
   const attendanceMut = useMutation({
     mutationFn: () => opsApi.importAttendance(attendanceFile),
     onSuccess: (res) => {
-      toast.success(res.message || 'Attendance imported');
+      const months = (res.monthsTouched || []).join(', ');
+      toast.success(
+        `${res.message || 'Attendance imported'}${months ? ` → month(s): ${months}` : ''}`
+      );
       if (res.errors?.length) {
-        toast.error(`${res.errors.length} row(s) could not be matched`);
+        toast.error(
+          `${res.errors.length} row(s) skipped — check names match employees (first name is OK)`
+        );
+      }
+      if (months) {
+        // Jump timesheet view to the first imported month so data is visible
+        const [y, m] = String(months.split(',')[0]).trim().split('-').map(Number);
+        if (y && m) {
+          setYear(y);
+          setMonth(m);
+        }
       }
       setAttendanceFile(null);
       qc.invalidateQueries({ queryKey: ['timesheet'] });
@@ -317,9 +330,10 @@ export default function TimesheetsPage() {
           <div>
             <h3 className="font-heading text-sm">Biometric Attendance Upload</h3>
             <p className="text-xs text-muted mt-1 max-w-xl">
-              Create each staff member first with the <strong>same full name</strong> (or matching AC-No. / employee ID)
-              as on the scanner sheet, then import. A <strong>30‑min break</strong> is deducted automatically when both
-              In and Out are set — you can still edit Break manually.
+              Upload the scanner Excel (AC-No., Name, Date, Clock In, Clock Out). Staff are matched by
+              <strong> name</strong> (first name is enough if unique). Times like <code>7:26 am</code> /
+              <code>4:13 pn</code> are supported. After import, the timesheet month switches to the
+              dates in the file (e.g. July week).
             </p>
           </div>
           <div className="space-y-1.5">

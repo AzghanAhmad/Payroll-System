@@ -41,13 +41,22 @@ export const parseBiometricTime = (value) => {
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
   }
-  const str = String(value).trim();
-  // 7:26:33 am / 4:13:45 pm
-  const ampm = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)$/i);
+  let str = String(value).trim();
+  // Biometric machines / fonts often render am→an, pm→pn
+  str = str
+    .replace(/\bans?\b/gi, 'am')
+    .replace(/\bpns?\b/gi, 'pm')
+    .replace(/\ba\.?m\.?\b/gi, 'am')
+    .replace(/\bp\.?m\.?\b/gi, 'pm');
+
+  // 7:26:33 am / 4:13:45 pm / 7:26:33 an / 4:13:45 pn
+  const ampm = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm|an|pn)$/i);
   if (ampm) {
     let h = Number(ampm[1]);
     const m = Number(ampm[2]);
-    const ap = ampm[3].toLowerCase();
+    let ap = ampm[3].toLowerCase();
+    if (ap === 'an') ap = 'am';
+    if (ap === 'pn') ap = 'pm';
     if (ap === 'pm' && h < 12) h += 12;
     if (ap === 'am' && h === 12) h = 0;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -194,27 +203,69 @@ export const importAttendanceExcel = asyncHandler(async (req, res) => {
         .trim();
     const byId = new Map(employees.map((e) => [String(e.employeeId).toLowerCase(), e]));
     const byName = new Map(employees.map((e) => [normalizeName(e.fullName), e]));
+    // First-name index (biometric sheets often only print first name)
+    const byFirst = new Map();
+    for (const e of employees) {
+      const first = normalizeName(e.fullName).split(' ')[0];
+      if (!first) continue;
+      if (!byFirst.has(first)) byFirst.set(first, []);
+      byFirst.get(first).push(e);
+    }
 
-    const matchEmployee = (acNo, name) => {
-      if (acNo != null && String(acNo).trim() !== '') {
-        const id = String(acNo).trim().toLowerCase();
-        if (byId.has(id)) return byId.get(id);
-        for (const [k, e] of byId) {
-          if (Number(k) === Number(id) && !Number.isNaN(Number(id))) return e;
-        }
+    const namesCompatible = (sheetName, emp) => {
+      if (!sheetName) return true;
+      const n = normalizeName(sheetName);
+      const full = normalizeName(emp.fullName);
+      if (!n) return true;
+      if (full === n) return true;
+      if (full.startsWith(n) || n.startsWith(full)) return true;
+      const first = full.split(' ')[0];
+      if (first && (first === n || n.startsWith(first))) return true;
+      const words = n.split(' ').filter(Boolean);
+      if (words.length >= 2 && words.every((w) => full.includes(w))) return true;
+      return false;
+    };
+
+    const matchByName = (name) => {
+      if (!name) return null;
+      const n = normalizeName(name);
+      if (!n) return null;
+      if (byName.has(n)) return byName.get(n);
+      // Unique first-name match (sheet often has "Amanono" not "Amanono Mafuolo")
+      const firstHits = byFirst.get(n) || byFirst.get(n.split(' ')[0]);
+      if (firstHits?.length === 1) return firstHits[0];
+      for (const [k, e] of byName) {
+        if (k.startsWith(n) || n.startsWith(k.split(' ')[0])) return e;
+        const words = n.split(' ').filter(Boolean);
+        if (words.length >= 2 && words.every((w) => k.includes(w))) return e;
       }
-      if (name) {
-        const n = normalizeName(name);
-        if (byName.has(n)) return byName.get(n);
-        for (const [k, e] of byName) {
-          if (k === n) return e;
-          if (k.startsWith(n) || n.startsWith(k.split(' ')[0])) return e;
-          const words = n.split(' ').filter(Boolean);
-          if (words.length >= 2 && words.every((w) => k.includes(w))) return e;
-        }
-      }
+      // Ambiguous first name — don't guess
+      if (firstHits?.length > 1) return null;
       return null;
     };
+
+    const matchByAc = (acNo, name) => {
+      if (acNo == null || String(acNo).trim() === '') return null;
+      const id = String(acNo).trim().toLowerCase();
+      let emp = byId.get(id) || null;
+      if (!emp) {
+        for (const [k, e] of byId) {
+          if (Number(k) === Number(id) && !Number.isNaN(Number(id))) {
+            emp = e;
+            break;
+          }
+        }
+      }
+      // Biometric AC-No is often NOT the payroll employee ID — only accept if name also fits
+      if (emp && name && !namesCompatible(name, emp)) return null;
+      return emp;
+    };
+
+    /**
+     * Prefer name match first: device AC-No rarely equals payroll EMP-#### / numeric IDs.
+     * Fall back to AC-No only when name is missing or name+AC agree.
+     */
+    const matchEmployee = (acNo, name) => matchByName(name) || matchByAc(acNo, name);
 
     const settings = await getSettings();
     const updates = [];
@@ -268,8 +319,17 @@ export const importAttendanceExcel = asyncHandler(async (req, res) => {
       const clockIn = parseBiometricTime(inRaw);
       const clockOut = parseBiometricTime(outRaw);
       if (!clockIn) {
-        errors.push({ row: i + 1, message: `Missing clock in for ${emp.fullName}` });
+        errors.push({
+          row: i + 1,
+          message: `Could not read Clock In for ${emp.fullName}: "${inRaw}"`,
+        });
         continue;
+      }
+      if (outRaw && !clockOut) {
+        errors.push({
+          row: i + 1,
+          message: `Could not read Clock Out for ${emp.fullName}: "${outRaw}" (In ${clockIn} was saved)`,
+        });
       }
 
       let year = date.getFullYear();
