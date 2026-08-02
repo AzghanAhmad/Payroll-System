@@ -161,8 +161,9 @@ export default function MonthControlPage() {
             </Button>
           </div>
           <p className="text-xs text-muted">
-            PDF export always includes weekly summary, leave, IOU, and statutory totals.
-            Individual payslip PDFs are included when they have been generated for the month.
+            PDF export includes a payslip for every staff member, plus clear tables:
+            weekly register, month summary, PAYE/NPF/ACC by staff, leave, and IOUs.
+            Generate Weekly payroll first so figures are complete.
           </p>
         </Card>
 
@@ -210,7 +211,7 @@ export default function MonthControlPage() {
             </li>
             <li>
               <strong className="text-slate-800">Save Full Payroll PDFs</strong> builds a zip for the current month
-              with payslips, leave records, IOUs, weekly summary, and PAYE / NPF / ACC totals.
+              with every employee&apos;s payslip plus formatted registers (weekly, month summary, statutory, leave, IOU).
             </li>
             <li>
               <strong className="text-slate-800">Edit company details</strong> updates the name used in file names,
