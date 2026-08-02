@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import connectDB from '../config/db.js';
 import User from '../models/User.js';
@@ -6,6 +8,9 @@ import Settings from '../models/Settings.js';
 import Department from '../models/Department.js';
 import Employee from '../models/Employee.js';
 import Notification from '../models/Notification.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 await connectDB();
 
@@ -18,10 +23,10 @@ await Promise.all([
 ]);
 
 const settings = await Settings.create({
-  companyName: 'Pacific Payroll Ltd',
+  companyName: 'Alpha Group',
   companyAddress: 'Apia, Samoa',
   companyPhone: '+685 12345',
-  companyEmail: 'hr@pacificpayroll.local',
+  companyEmail: 'hr@alphagroup.local',
   currency: 'WST',
   weekStart: 'friday',
   normalHoursCap: 40,
@@ -37,14 +42,14 @@ const settings = await Settings.create({
 
 const admin = await User.create({
   name: 'System Admin',
-  email: 'admin@payroll.local',
+  email: 'admin123@gmail.com',
   password: 'admin123',
   role: 'admin',
 });
 
 await User.create({
   name: 'HR Manager',
-  email: 'hr@payroll.local',
+  email: 'hr@alphagroup.local',
   password: 'hr12345',
   role: 'hr',
 });
@@ -107,13 +112,13 @@ await Employee.insertMany([
 await Notification.create({
   user: admin._id,
   title: 'Welcome',
-  message: 'Payroll system seeded successfully. Login with admin@payroll.local / admin123',
+  message: 'Payroll system seeded successfully. Login with admin123@gmail.com / admin123',
   type: 'success',
 });
 
 console.log('Seed complete');
-console.log('Admin: admin@payroll.local / admin123');
-console.log('HR: hr@payroll.local / hr12345');
+console.log('Admin: admin123@gmail.com / admin123');
+console.log('HR: hr@alphagroup.local / hr12345');
 console.log('Company:', settings.companyName);
 
 await mongoose.disconnect();

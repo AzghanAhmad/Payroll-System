@@ -1,7 +1,6 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import LoginPage from '@/pages/Login/LoginPage';
-import SignupPage from '@/pages/Login/SignupPage';
 import { ForgotPasswordPage, ResetPasswordPage } from '@/pages/Login/ForgotPasswordPage';
 import DashboardPage from '@/pages/Dashboard/DashboardPage';
 import EmployeesPage from '@/pages/Employees/EmployeesPage';
@@ -48,8 +47,8 @@ export default function AppRoutes() {
     <Routes>
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/register" element={<Navigate to="/signup" replace />} />
+        <Route path="/signup" element={<Navigate to="/login" replace />} />
+        <Route path="/register" element={<Navigate to="/login" replace />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Route>

@@ -10,8 +10,8 @@ import AuthLayout from './AuthLayout';
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin123@gmail.com');
+  const [password, setPassword] = useState('admin123');
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e) => {
@@ -32,21 +32,13 @@ export default function LoginPage() {
     <AuthLayout
       title="Welcome back"
       subtitle="Sign in to manage timesheets, payroll, and payslips."
-      footer={
-        <>
-          Don&apos;t have an account?{' '}
-          <Link to="/signup" className="font-medium text-primary hover:underline">
-            Create one
-          </Link>
-        </>
-      }
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <Input
           label="Email"
           type="email"
           autoComplete="email"
-          placeholder="you@company.com"
+          placeholder="admin123@gmail.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required

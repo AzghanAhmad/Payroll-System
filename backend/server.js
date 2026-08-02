@@ -1,8 +1,9 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import connectDB from './config/db.js';
@@ -25,28 +26,43 @@ import payrollOpsRoutes from './routes/payrollOpsRoutes.js';
 import statutoryRoutes from './routes/statutoryRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 const app = express();
+const clientDist = path.join(__dirname, '..', 'frontend', 'dist');
+const serveSpa = fs.existsSync(path.join(clientDist, 'index.html'));
 
 await connectDB();
 
-// Avoid stale 304 responses for dynamic payroll data
 app.set('etag', false);
-app.use((req, res, next) => {
-  res.set('Cache-Control', 'no-store');
-  next();
-});
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false,
+}));
+
+const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: (origin, cb) => {
+      // Allow same-origin / non-browser / configured client
+      if (!origin || origin === clientUrl || serveSpa) return cb(null, true);
+      return cb(null, origin === clientUrl);
+    },
     credentials: true,
   })
 );
-app.use(morgan('dev'));
+
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadRoot));
+
+// Do not cache dynamic API responses
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
@@ -65,8 +81,25 @@ app.use('/api/calendar', calendarRoutes);
 app.use('/api/ops', payrollOpsRoutes);
 app.use('/api/statutory', statutoryRoutes);
 
+if (serveSpa) {
+  app.use(
+    express.static(clientDist, {
+      index: false,
+      maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
+    })
+  );
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+    res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+      if (err) next(err);
+    });
+  });
+}
+
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Payroll API running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Alpha Group Payroll API running on port ${PORT}${serveSpa ? ' (serving SPA)' : ''}`);
+});

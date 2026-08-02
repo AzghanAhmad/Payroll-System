@@ -24,20 +24,7 @@ const authResponse = async (user) => {
 };
 
 export const register = asyncHandler(async (req, res) => {
-  const { name, email, password, role } = req.body;
-  if (!name || !email || !password) throw new AppError('Name, email and password are required');
-  const exists = await User.findOne({ email });
-  if (exists) throw new AppError('Email already registered', 409);
-
-  const user = await User.create({
-    name,
-    email,
-    password,
-    role: role || 'employee',
-  });
-
-  const data = await authResponse(user);
-  res.status(201).json(data);
+  throw new AppError('Public sign-up is disabled. Ask an admin to create your account.', 403);
 });
 
 export const login = asyncHandler(async (req, res) => {

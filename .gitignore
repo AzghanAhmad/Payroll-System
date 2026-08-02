@@ -1,14 +1,39 @@
+# Dependencies & build
 node_modules/
+**/node_modules/
 dist/
-.env
-uploads/photos/
-uploads/logos/
-uploads/exports/
-uploads/temp/
-*.log
-.DS_Store
 frontend/dist/
-backend/uploads/exports/
+backend/dist/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+
+# Uploads (local / ephemeral)
+uploads/
 backend/uploads/photos/
 backend/uploads/logos/
+backend/uploads/exports/
 backend/uploads/temp/
+backend/uploads/**/*
+!backend/uploads/.gitkeep
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage / test
+coverage/
+.nyc_output/
