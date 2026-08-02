@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+uploads/photos/
+uploads/logos/
+uploads/exports/
+uploads/temp/
+*.log
+.DS_Store
+frontend/dist/
+backend/uploads/exports/
+backend/uploads/photos/
+backend/uploads/logos/
+backend/uploads/temp/

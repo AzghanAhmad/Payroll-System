@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-background: #F8FAFC;
+  --color-card: #FFFFFF;
+  --color-primary: #2563EB;
+  --color-secondary: #3B82F6;
+  --color-accent: #06B6D4;
+  --color-success: #22C55E;
+  --color-danger: #EF4444;
+  --color-warning: #F59E0B;
+  --color-sidebar: #0F172A;
+  --color-sidebar-hover: #1E293B;
+  --color-muted: #64748B;
+  --color-border: #E2E8F0;
+  --font-heading: "Poppins", sans-serif;
+  --font-sans: "Inter", sans-serif;
+  --radius-xl: 18px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-background);
+  color: #0F172A;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+}
+
+.glass-header {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.soft-shadow {
+  box-shadow: 0 10px 30px -12px rgba(15, 23, 42, 0.12);
+}
+
+.gradient-btn {
+  background: linear-gradient(135deg, #2563EB 0%, #06B6D4 100%);
+  color: white;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.gradient-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -8px rgba(37, 99, 235, 0.6);
+  opacity: 0.95;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 8px;
+}
