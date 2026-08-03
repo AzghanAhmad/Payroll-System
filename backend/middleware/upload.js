@@ -23,9 +23,13 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowed = /jpeg|jpg|png|gif|webp|pdf|xlsx|xls|csv/;
+  const allowed = /jpeg|jpg|png|gif|webp|pdf|xlsx|xls|xlsm|csv/;
   const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-  const mime = allowed.test(file.mimetype) || file.mimetype.includes('sheet') || file.mimetype.includes('excel');
+  const mime =
+    allowed.test(file.mimetype) ||
+    file.mimetype.includes('sheet') ||
+    file.mimetype.includes('excel') ||
+    file.mimetype.includes('macro');
   if (ext || mime) return cb(null, true);
   cb(new Error('Invalid file type'));
 };
