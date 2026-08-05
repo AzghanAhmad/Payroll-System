@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Download, Printer, Eye, FileStack } from 'lucide-react';
+import { Download, Printer, Eye, FileStack, Trash2 } from 'lucide-react';
 import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { ShareMenu } from '@/components/ui/ShareMenu';
 import { payslipApi, departmentApi, payrollApi } from '@/services';
-import { formatMoney, formatNumber, MONTHS, yearOptions } from '@/utils/helpers';
+import { formatMoney, formatNumber, MONTHS, yearOptions, buildPayslipFilename, payslipFileLabel } from '@/utils/helpers';
 import { formatFullDate, getWeekPeriod } from '@/utils/weekPeriod';
 
 export default function PayslipsPage() {
@@ -77,13 +77,66 @@ export default function PayslipsPage() {
     onError: (err) => toast.error(err.response?.data?.message || err.message || 'Failed'),
   });
 
-  const download = async (id) => {
+  const fileCtx = useMemo(
+    () => ({ year, month, week: periodType === 'weekly' ? week : undefined, periodType }),
+    [year, month, week, periodType]
+  );
+
+  const deleteMut = useMutation({
+    mutationFn: (id) => payslipApi.remove(id),
+    onSuccess: (res, id) => {
+      toast.success(res.message || 'Payslip deleted');
+      setSelected((s) => (String(s?._id) === String(id) ? null : s));
+      qc.invalidateQueries({ queryKey: ['payslips'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || err.message || 'Delete failed'),
+  });
+
+  const deletePeriodMut = useMutation({
+    mutationFn: () =>
+      payslipApi.removePeriod({
+        year,
+        month,
+        type: periodType,
+        week: periodType === 'weekly' ? week : undefined,
+      }),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Payslips deleted');
+      setSelected(null);
+      qc.invalidateQueries({ queryKey: ['payslips'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || err.message || 'Delete failed'),
+  });
+
+  const handleDelete = (p) => {
+    const name = p.employee?.fullName || 'this employee';
+    const label = payslipFileLabel(p, fileCtx);
+    if (!window.confirm(`Delete payslip for ${name}?\n${label}`)) return;
+    deleteMut.mutate(p._id);
+  };
+
+  const handleDeletePeriod = () => {
+    if (!payslips.length) return;
+    const msg =
+      periodType === 'weekly'
+        ? `Delete all ${payslips.length} payslip(s) for Week ${week}, ${MONTHS[month - 1]} ${year}?`
+        : `Delete all ${payslips.length} monthly payslip(s) for ${MONTHS[month - 1]} ${year}?`;
+    if (!window.confirm(msg)) return;
+    deletePeriodMut.mutate();
+  };
+
+  const download = async (payslipOrId) => {
     try {
+      const payslip =
+        typeof payslipOrId === 'object'
+          ? payslipOrId
+          : payslips.find((p) => p._id === payslipOrId);
+      const id = typeof payslipOrId === 'object' ? payslipOrId._id : payslipOrId;
       const res = await payslipApi.download(id);
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `payslip-${id}.pdf`;
+      a.download = buildPayslipFilename(payslip, fileCtx);
       a.click();
       window.URL.revokeObjectURL(url);
     } catch {
@@ -117,10 +170,27 @@ export default function PayslipsPage() {
   };
 
   const downloadAll = async () => {
-    for (const p of payslips) {
-      await download(p._id);
+    try {
+      const res = await payslipApi.downloadPack({
+        year,
+        month,
+        type: periodType,
+        week: periodType === 'weekly' ? week : undefined,
+      });
+      const zipName =
+        periodType === 'weekly'
+          ? `Payslips_${MONTHS[month - 1]}_${year}_Week${week}.zip`
+          : `Payslips_${MONTHS[month - 1]}_${year}_Monthly.zip`;
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = zipName;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Downloaded ${payslips.length} payslip(s) as ${zipName}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Download failed');
     }
-    toast.success(`Downloaded ${payslips.length} PDFs`);
   };
 
   const periodRange =
@@ -195,6 +265,15 @@ export default function PayslipsPage() {
               <Button type="button" variant="outline" disabled={!payslips.length} onClick={downloadAll}>
                 <Download size={16} /> Download PDFs
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                disabled={!payslips.length || deletePeriodMut.isPending}
+                onClick={handleDeletePeriod}
+              >
+                <Trash2 size={16} /> Delete Period
+              </Button>
             </div>
           </div>
           <p className="text-xs text-muted">
@@ -252,7 +331,12 @@ export default function PayslipsPage() {
                   )}
                   {payslips.map((p) => (
                     <tr key={p._id} className="border-b border-border/60 hover:bg-slate-50/70">
-                      <td className="px-3 py-2 font-medium whitespace-nowrap">{p.employee?.fullName}</td>
+                      <td className="px-3 py-2 font-medium whitespace-nowrap">
+                        <div>{p.employee?.fullName}</div>
+                        <div className="text-[11px] text-muted font-mono mt-0.5">
+                          {payslipFileLabel(p, fileCtx)}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-xs">
                         <div>{formatFullDate(p.periodStart)} – {formatFullDate(p.periodEnd)}</div>
                         <div className="text-muted">
@@ -273,7 +357,7 @@ export default function PayslipsPage() {
                       <td className="px-3 py-2">
                         <div className="flex justify-end gap-1 items-center">
                           <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => setSelected(p)}><Eye size={16} /></button>
-                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => download(p._id)}><Download size={16} /></button>
+                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => download(p)}><Download size={16} /></button>
                           <ShareMenu
                             title={`Payslip — ${p.employee?.fullName || ''}`}
                             text={shareTextFor(p)}
@@ -281,6 +365,15 @@ export default function PayslipsPage() {
                             emailLabel="Email to staff"
                           />
                           <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => printPayslip(p._id)}><Printer size={16} /></button>
+                          <button
+                            type="button"
+                            className="p-2 rounded-full hover:bg-red-50 text-red-600 cursor-pointer"
+                            title="Delete payslip"
+                            disabled={deleteMut.isPending}
+                            onClick={() => handleDelete(p)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -303,7 +396,14 @@ export default function PayslipsPage() {
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {payslips.map((p) => (
-              <StaffPayslipCard key={p._id} payslip={p} onOpen={() => setSelected(p)} onDownload={() => download(p._id)} />
+              <StaffPayslipCard
+                key={p._id}
+                payslip={p}
+                fileCtx={fileCtx}
+                onOpen={() => setSelected(p)}
+                onDownload={() => download(p)}
+                onDelete={() => handleDelete(p)}
+              />
             ))}
             {!payslips.length && (
               <Card><p className="text-muted text-sm">No payslips for this period.</p></Card>
@@ -316,10 +416,11 @@ export default function PayslipsPage() {
         {selected && (
           <PayslipDetail
             payslip={selected}
-            onDownload={() => download(selected._id)}
+            onDownload={() => download(selected)}
             onEmail={() => email(selected._id)}
             shareText={shareTextFor(selected)}
             onPrint={() => printPayslip(selected._id)}
+            onDelete={() => handleDelete(selected)}
           />
         )}
       </Modal>
@@ -327,12 +428,13 @@ export default function PayslipsPage() {
   );
 }
 
-function StaffPayslipCard({ payslip: p, onOpen, onDownload }) {
+function StaffPayslipCard({ payslip: p, fileCtx, onOpen, onDownload, onDelete }) {
   return (
     <Card className="space-y-3">
       <div className="flex justify-between gap-2 border-b border-border pb-3">
         <div>
           <p className="font-heading text-lg">{p.employee?.fullName}</p>
+          <p className="text-[11px] text-muted font-mono mt-0.5">{payslipFileLabel(p, fileCtx)}</p>
           <p className="text-xs text-muted">
             {p.position || '—'} · {p.departmentName || p.employee?.department?.name || '—'}
           </p>
@@ -373,12 +475,15 @@ function StaffPayslipCard({ payslip: p, onOpen, onDownload }) {
       <div className="flex gap-2 justify-end">
         <Button type="button" variant="outline" size="sm" onClick={onOpen}>View</Button>
         <Button type="button" size="sm" onClick={onDownload}>PDF</Button>
+        <Button type="button" variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50" onClick={onDelete}>
+          Delete
+        </Button>
       </div>
     </Card>
   );
 }
 
-function PayslipDetail({ payslip: p, onDownload, onEmail, onPrint, shareText }) {
+function PayslipDetail({ payslip: p, onDownload, onEmail, onPrint, onDelete, shareText }) {
   return (
     <div className="space-y-4 text-sm">
       <div className="grid grid-cols-2 gap-2">
@@ -425,6 +530,9 @@ function PayslipDetail({ payslip: p, onDownload, onEmail, onPrint, shareText }) 
       </div>
 
       <div className="flex gap-2 justify-end items-center">
+        <Button type="button" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={onDelete}>
+          Delete
+        </Button>
         <Button type="button" variant="outline" onClick={onDownload}>Download PDF</Button>
         <ShareMenu
           title={`Payslip — ${p.employee?.fullName || ''}`}

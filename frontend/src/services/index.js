@@ -64,6 +64,9 @@ export const payslipApi = {
   list: (params) => api.get('/payslips', { params }).then((r) => r.data),
   get: (id) => api.get(`/payslips/${id}`).then((r) => r.data),
   download: (id) => api.get(`/payslips/download/${id}`, { responseType: 'blob' }),
+  downloadPack: (params) => api.get('/payslips/download-pack', { params, responseType: 'blob' }),
+  remove: (id) => api.delete(`/payslips/${id}`).then((r) => r.data),
+  removePeriod: (params) => api.delete('/payslips/period', { params }).then((r) => r.data),
   email: (id) => api.post(`/payslips/email/${id}`).then((r) => r.data),
   generate: (ids) => api.post('/payslips/generate', { ids }).then((r) => r.data),
 };

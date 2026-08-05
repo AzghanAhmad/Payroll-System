@@ -9,6 +9,67 @@ import { getCurrencySymbol } from '../utils/currencies.js';
 
 const money = (n, symbol) => `${symbol}${Number(n || 0).toFixed(2)}`;
 
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export const buildPayslipFilename = (payslip, ctx = {}) => {
+  const emp = payslip.employee || {};
+  const staffName =
+    emp.fullName ||
+    payslip.employeeName ||
+    ctx.employeeName ||
+    'Employee';
+  const name = String(staffName)
+    .replace(/[^\w\s'-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+  const y = payslip.year ?? ctx.year ?? '';
+  const m = Number(payslip.month ?? ctx.month ?? 1);
+  const monthLabel = MONTH_SHORT[m - 1] || String(m).padStart(2, '0');
+  const type = payslip.type ?? ctx.periodType ?? 'weekly';
+  const w = payslip.week ?? ctx.week;
+  const period = type === 'weekly' && w ? `Week${w}` : 'Monthly';
+  return `${name}_${monthLabel}_${y}_${period}_Payslip.pdf`;
+};
+
+/** Ensure PDF exists on disk with the current naming scheme (regenerates legacy names). */
+export const resolvePayslipPdfPath = async (payslipIdOrDoc) => {
+  let payslip =
+    typeof payslipIdOrDoc === 'object' && payslipIdOrDoc?._id
+      ? payslipIdOrDoc
+      : await Payslip.findById(payslipIdOrDoc).populate('employee', 'employeeId fullName');
+
+  if (!payslip) throw new Error('Payslip not found');
+
+  if (!payslip.employee?.fullName) {
+    payslip = await Payslip.findById(payslip._id).populate('employee', 'employeeId fullName');
+  }
+
+  const dir = path.join(uploadRoot, 'exports');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const expected = buildPayslipFilename(payslip);
+  const expectedPath = path.join(dir, expected);
+  const currentBase = payslip.pdfPath ? path.basename(payslip.pdfPath) : '';
+  const currentPath = currentBase ? path.join(dir, currentBase) : '';
+
+  if (currentBase === expected && fs.existsSync(expectedPath)) {
+    return expectedPath;
+  }
+
+  if (currentPath && fs.existsSync(currentPath) && currentBase !== expected) {
+    try {
+      fs.unlinkSync(currentPath);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const rel = await generatePayslipPdf(payslip._id);
+  payslip.pdfPath = rel;
+  await payslip.save();
+  return path.join(dir, path.basename(rel));
+};
+
 export const generatePayslipPdf = async (payslipId) => {
   const payslip = await Payslip.findById(payslipId).populate(
     'employee',
@@ -21,7 +82,7 @@ export const generatePayslipPdf = async (payslipId) => {
   const dir = path.join(uploadRoot, 'exports');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  const filename = `payslip-${payslip.employee?.employeeId || payslipId}-${payslip.year}${String(payslip.month).padStart(2, '0')}W${payslip.week || 'M'}.pdf`;
+  const filename = buildPayslipFilename(payslip);
   const filePath = path.join(dir, filename);
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });

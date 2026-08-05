@@ -377,23 +377,23 @@ export default function TimesheetsPage() {
           </span>
         </div>
 
-        <Card className="overflow-hidden p-0">
-          <div className="px-4 py-3 border-b border-border bg-slate-50 flex justify-between shrink-0">
+        <Card className="p-0">
+          <div className="px-4 py-3 border-b border-border bg-slate-50 flex justify-between shrink-0 rounded-t-[18px]">
             <h3 className="font-heading text-sm">Week {week} Worklog</h3>
             <span className="text-xs text-muted">In / Out / Break / Total hours per day</span>
           </div>
-          <div className="max-h-[min(70vh,820px)] overflow-auto">
-            <table className="w-full text-xs border-collapse min-w-[1100px]">
-              <thead>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-separate border-spacing-0 min-w-[1100px]">
+              <thead className="[&_th]:sticky [&_th]:top-0">
                 <tr className="border-b border-border shadow-sm">
                   <th
-                    className="px-2 py-2 text-left sticky top-0 left-0 z-30 bg-slate-100 border-r"
+                    className="px-2 py-2 text-left sticky top-0 left-0 z-40 bg-slate-100 border-r border-b border-border"
                     style={{ minWidth: EMP_W }}
                   >
                     Employee
                   </th>
                   <th
-                    className="px-2 py-2 text-left sticky top-0 z-30 bg-slate-100 border-r"
+                    className="px-2 py-2 text-left sticky top-0 z-30 bg-slate-100 border-r border-b border-border"
                     style={{ left: EMP_W, minWidth: FIELD_W }}
                   >
                     Field
@@ -403,15 +403,15 @@ export default function TimesheetsPage() {
                     return (
                       <th
                         key={d.key}
-                        className={`px-1 py-2 text-center min-w-[96px] sticky top-0 z-20 ${hol ? 'bg-rose-100 text-rose-900' : 'bg-slate-100'}`}
+                        className={`px-1 py-2 text-center min-w-[96px] sticky top-0 z-20 border-b border-border ${hol ? 'bg-rose-100 text-rose-900' : 'bg-slate-100'}`}
                       >
                         <div>{d.label}{hol ? ' · Holiday' : ''}</div>
                         <div className="font-normal text-muted">{formatShortDate(getDayDate(year, month, week, i))}</div>
                       </th>
                     );
                   })}
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-sky-100 text-sky-900">Week Hrs</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900">Rate</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-sky-100 text-sky-900 border-b border-border">Week Hrs</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-border">Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -500,29 +500,29 @@ export default function TimesheetsPage() {
           </div>
         </Card>
 
-        <Card className="overflow-hidden p-0 border-violet-200">
-          <div className="px-4 py-3 border-b border-violet-200 bg-violet-100 flex items-center justify-between shrink-0">
+        <Card className="p-0 border-violet-200">
+          <div className="px-4 py-3 border-b border-violet-200 bg-violet-100 flex items-center justify-between shrink-0 rounded-t-[18px]">
             <h3 className="font-heading text-sm text-violet-950">Hours Summary & Payroll Costing — Week {week}</h3>
             <span className="text-xs text-violet-700">Purple = payroll costing</span>
           </div>
-          <div className="max-h-[min(60vh,640px)] overflow-auto">
-            <table className="w-full text-xs min-w-[1200px]">
-              <thead>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[1200px] border-separate border-spacing-0">
+              <thead className="[&_th]:sticky [&_th]:top-0">
                 <tr className="text-left shadow-sm">
-                  <th className="px-3 py-2 sticky top-0 left-0 z-30 bg-violet-100 text-violet-900">Employee</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-sky-100 text-sky-900">Total Hrs</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-emerald-100 text-emerald-900">Normal</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-emerald-100 text-emerald-900">OT 1.5</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-emerald-100 text-emerald-900">Double</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900">Rate</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900">Normal Pay</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900">OT Pay</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900">Double Pay</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-200 text-violet-950">Gross Pay</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900">Employer NPF</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900">Employer ACC</th>
-                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-200 text-violet-950">Employer Cost</th>
-                  <th className="px-3 py-2 sticky top-0 z-20 bg-violet-100 text-violet-900">Notes</th>
+                  <th className="px-3 py-2 sticky top-0 left-0 z-40 bg-violet-100 text-violet-900 border-b border-violet-200">Employee</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-sky-100 text-sky-900 border-b border-violet-200">Total Hrs</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-emerald-100 text-emerald-900 border-b border-violet-200">Normal</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-emerald-100 text-emerald-900 border-b border-violet-200">OT 1.5</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-emerald-100 text-emerald-900 border-b border-violet-200">Double</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-violet-200">Rate</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-violet-200">Normal Pay</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-violet-200">OT Pay</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-violet-200">Double Pay</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-200 text-violet-950 border-b border-violet-200">Gross Pay</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-violet-200">Employer NPF</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-violet-200">Employer ACC</th>
+                  <th className="px-2 py-2 text-right sticky top-0 z-20 bg-violet-200 text-violet-950 border-b border-violet-200">Employer Cost</th>
+                  <th className="px-3 py-2 sticky top-0 z-20 bg-violet-100 text-violet-900 border-b border-violet-200">Notes</th>
                 </tr>
               </thead>
               <tbody>

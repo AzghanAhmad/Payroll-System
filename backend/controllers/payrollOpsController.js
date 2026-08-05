@@ -20,7 +20,7 @@ import fs from 'fs';
 import { ZipArchive } from 'archiver';
 import { uploadRoot } from '../middleware/upload.js';
 import PDFDocument from 'pdfkit';
-import { generatePayslipPdf } from '../services/payslipPdf.js';
+import { generatePayslipPdf, buildPayslipFilename, resolvePayslipPdfPath } from '../services/payslipPdf.js';
 import { getCurrencySymbol } from '../utils/currencies.js';
 
 const getSettings = async () => {
@@ -180,28 +180,24 @@ export const saveFullPayrollPdfs = asyncHandler(async (req, res) => {
     .populate('employee', 'employeeId fullName')
     .sort({ week: 1 });
 
-  // Ensure every payslip with a linked employee has a generated PDF, then copy into the pack
+  // Ensure every payslip has a PDF with the staff/month/week filename, then copy into the pack
   let payslipCount = 0;
-  for (const p of payslips) {
-    if (!p.employee) continue;
-    try {
-      const pdfPath = await generatePayslipPdf(p._id);
-      p.pdfPath = pdfPath;
-      await p.save();
-
-      const src = path.join(uploadRoot, 'exports', path.basename(pdfPath));
-      if (!fs.existsSync(src)) continue;
-
-      const safeName = String(p.employee.fullName || 'staff')
-        .replace(/[^\w\s-]+/g, '')
-        .trim()
-        .replace(/\s+/g, '_');
-      const destName = `W${p.week || 'M'}_${p.employee.employeeId || 'ID'}_${safeName}.pdf`;
-      fs.copyFileSync(src, path.join(folder, 'payslips', destName));
-      payslipCount += 1;
-    } catch (err) {
-      console.error('Payslip PDF failed', p._id, err.message);
-    }
+  const payslipBatchSize = 4;
+  for (let i = 0; i < payslips.length; i += payslipBatchSize) {
+    const batch = payslips.slice(i, i + payslipBatchSize);
+    await Promise.all(
+      batch.map(async (p) => {
+        if (!p.employee) return;
+        try {
+          const src = await resolvePayslipPdfPath(p);
+          const destName = buildPayslipFilename(p);
+          fs.copyFileSync(src, path.join(folder, 'payslips', destName));
+          payslipCount += 1;
+        } catch (err) {
+          console.error('Payslip PDF failed', p._id, err.message);
+        }
+      })
+    );
   }
 
   // Build per-employee rows from payroll lines (covers all staff on payroll)

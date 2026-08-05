@@ -50,6 +50,7 @@ app.use(
       return cb(null, origin === clientUrl);
     },
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   })
 );
 
