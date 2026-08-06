@@ -42,8 +42,8 @@ const settings = await Settings.create({
 
 const admin = await User.create({
   name: 'System Admin',
-  email: 'admin123@gmail.com',
-  password: 'admin123',
+  email: 'alphacc2018@gmail.com',
+  password: 'AlphaCC@Pay2018!xK9',
   role: 'admin',
 });
 
@@ -112,12 +112,12 @@ await Employee.insertMany([
 await Notification.create({
   user: admin._id,
   title: 'Welcome',
-  message: 'Payroll system seeded successfully. Login with admin123@gmail.com / admin123',
+  message: 'Payroll system seeded successfully. Login with alphacc2018@gmail.com',
   type: 'success',
 });
 
 console.log('Seed complete');
-console.log('Admin: admin123@gmail.com / admin123');
+console.log('Admin: alphacc2018@gmail.com / AlphaCC@Pay2018!xK9');
 console.log('HR: hr@alphagroup.local / hr12345');
 console.log('Company:', settings.companyName);
 

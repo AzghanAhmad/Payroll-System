@@ -15,6 +15,7 @@ import PayrollRulesSettings from '@/pages/Settings/PayrollRulesSettings';
 import LeaveSettings from '@/pages/Settings/LeaveSettings';
 import StatutorySettings from '@/pages/Settings/StatutorySettings';
 import DepartmentsSettings from '@/pages/Settings/DepartmentsSettings';
+import AccountSettings from '@/pages/Settings/AccountSettings';
 import LeavePage from '@/pages/Leave/LeavePage';
 import MonthControlPage from '@/pages/MonthControl/MonthControlPage';
 import SchedulePage from '@/pages/Schedule/SchedulePage';
@@ -69,6 +70,7 @@ export default function AppRoutes() {
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsLayout />}>
           <Route index element={<CompanySettings />} />
+          <Route path="account" element={<AccountSettings />} />
           <Route path="company" element={<CompanySettings />} />
           <Route path="payroll" element={<PayrollRulesSettings />} />
           <Route path="leave" element={<LeaveSettings />} />

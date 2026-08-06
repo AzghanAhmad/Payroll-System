@@ -106,6 +106,9 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 export const resetPassword = asyncHandler(async (req, res) => {
   const { token, password } = req.body;
   if (!token || !password) throw new AppError('Token and password required');
+  if (String(password).length < 8) {
+    throw new AppError('Password must be at least 8 characters');
+  }
 
   const hashed = crypto.createHash('sha256').update(token).digest('hex');
   const user = await User.findOne({
@@ -121,4 +124,29 @@ export const resetPassword = asyncHandler(async (req, res) => {
   await user.save();
 
   res.json({ message: 'Password updated' });
+});
+
+/** Logged-in user changes their own password */
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    throw new AppError('Current password and new password are required');
+  }
+  if (String(newPassword).length < 8) {
+    throw new AppError('New password must be at least 8 characters');
+  }
+  if (currentPassword === newPassword) {
+    throw new AppError('New password must be different from the current password');
+  }
+
+  const user = await User.findById(req.user._id).select('+password');
+  if (!user) throw new AppError('User not found', 404);
+  if (!(await user.matchPassword(currentPassword))) {
+    throw new AppError('Current password is incorrect', 400);
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  res.json({ message: 'Password updated successfully' });
 });

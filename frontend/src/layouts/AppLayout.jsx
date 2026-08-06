@@ -20,6 +20,7 @@ import {
   Search,
   ChevronDown,
   UserRound,
+  KeyRound,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
@@ -39,10 +40,11 @@ const links = [
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/iou-tracker', label: 'IOU Tracker', icon: HandCoins },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/settings', label: 'Settings', icon: Settings, roles: ['admin'] },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const QUICK_ACTIONS = [
+  { label: 'Change password', path: '/settings/account', icon: KeyRound },
   { label: 'Settings', path: '/settings/company', icon: Settings },
   { label: 'Timesheets', path: '/timesheets', icon: Clock },
   { label: 'Leave Tracker', path: '/leave', icon: Palmtree },

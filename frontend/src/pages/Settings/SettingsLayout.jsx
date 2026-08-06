@@ -5,11 +5,14 @@ import {
   Palmtree,
   Landmark,
   Layers,
+  KeyRound,
 } from 'lucide-react';
 import AppLayout from '@/layouts/AppLayout';
 import { cn } from '@/utils/helpers';
+import { useAuth } from '@/context/AuthContext';
 
 const SECTIONS = [
+  { to: '/settings/account', label: 'Account', icon: KeyRound, desc: 'Email & password', allRoles: true },
   { to: '/settings/company', label: 'Company', icon: Building2, desc: 'Name, logo, currency' },
   { to: '/settings/payroll', label: 'Payroll Rules', icon: Calculator, desc: 'OT, NPF & ACC rates' },
   { to: '/settings/leave', label: 'Leave Entitlements', icon: Palmtree, desc: 'Annual leave allowances' },
@@ -19,16 +22,21 @@ const SECTIONS = [
 
 export default function SettingsLayout() {
   const location = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   if (location.pathname === '/settings' || location.pathname === '/settings/') {
-    return <Navigate to="/settings/company" replace />;
+    return <Navigate to={isAdmin ? '/settings/company' : '/settings/account'} replace />;
   }
+
+  const visible = SECTIONS.filter((s) => s.allRoles || isAdmin);
 
   return (
     <AppLayout title="Settings">
       <div className="flex flex-col lg:flex-row gap-6 max-w-6xl">
         <aside className="lg:w-56 shrink-0">
           <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0 lg:sticky lg:top-4">
-            {SECTIONS.map(({ to, label, icon: Icon, desc }) => (
+            {visible.map(({ to, label, icon: Icon, desc }) => (
               <NavLink
                 key={to}
                 to={to}
