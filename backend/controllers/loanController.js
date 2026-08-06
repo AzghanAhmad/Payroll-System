@@ -45,9 +45,50 @@ const syncPayrollIou = async (employeeId, year, month, week, amount) => {
   if (payslip) {
     const prev = Number(payslip.iouDeduction || 0);
     payslip.iouDeduction = round2(amount);
+    payslip.totalDeductions = round2(Math.max(0, (payslip.totalDeductions || 0) - prev + amount));
     payslip.netPay = round2((payslip.netPay || 0) + prev - amount);
     payslip.loanBalance = round2(Math.max(0, (payslip.loanBalance || 0) + prev - amount));
     await payslip.save();
+  }
+};
+
+/** Wipe IOU snapshot + deductions from all payslips/payrolls for an employee */
+const clearEmployeeIouEverywhere = async (employeeId) => {
+  const payslips = await Payslip.find({ employee: employeeId });
+  for (const p of payslips) {
+    const prev = Number(p.iouDeduction || 0);
+    p.iouDeduction = 0;
+    p.iouAmount = 0;
+    p.iouPaid = 0;
+    p.loanBalance = 0;
+    p.iouPaymentsCount = 0;
+    if (prev) {
+      p.totalDeductions = round2(Math.max(0, (p.totalDeductions || 0) - prev));
+      p.netPay = round2((p.netPay || 0) + prev);
+    }
+    await p.save();
+  }
+
+  const payrolls = await Payroll.find({ 'lines.employee': employeeId });
+  for (const payroll of payrolls) {
+    let changed = false;
+    for (const line of payroll.lines || []) {
+      if (String(line.employee) !== String(employeeId)) continue;
+      const prev = Number(line.iouDeduction || 0);
+      if (!prev) continue;
+      line.iouDeduction = 0;
+      line.netPay = round2((line.netPay || 0) + prev);
+      if (payroll.totals) {
+        payroll.totals.iou = round2(Math.max(0, (payroll.totals.iou || 0) - prev));
+        payroll.totals.netPay = round2((payroll.totals.netPay || 0) + prev);
+      }
+      changed = true;
+    }
+    if (changed) {
+      payroll.markModified('lines');
+      payroll.markModified('totals');
+      await payroll.save();
+    }
   }
 };
 
@@ -222,9 +263,80 @@ export const addPayment = asyncHandler(async (req, res) => {
 });
 
 export const deleteLoan = asyncHandler(async (req, res) => {
-  const loan = await Loan.findByIdAndDelete(req.params.id);
+  const loan = await Loan.findById(req.params.id);
   if (!loan) throw new AppError('Loan not found', 404);
-  res.json({ message: 'Loan deleted' });
+
+  const employeeId = loan.employee;
+
+  // Zero any week payments that were applied to payroll/payslips
+  for (const wp of loan.weekPayments || []) {
+    if (wp.year && wp.month && wp.week != null) {
+      await syncPayrollIou(employeeId, wp.year, wp.month, wp.week, 0);
+    }
+  }
+
+  await loan.deleteOne();
+
+  // If no other loans remain for this staff, wipe leftover IOU snapshot on payslips
+  const remaining = await Loan.countDocuments({
+    employee: employeeId,
+    status: { $in: ['active', 'paid'] },
+  });
+  if (remaining === 0) {
+    await clearEmployeeIouEverywhere(employeeId);
+  }
+
+  res.json({ message: 'Loan deleted and IOU cleared from payslips' });
+});
+
+/** Wipe all IOU/loans (and related payslip deductions) — for test reset */
+export const resetAllIou = asyncHandler(async (req, res) => {
+  const names = Array.isArray(req.body?.names) ? req.body.names : null;
+  let employeeFilter = {};
+
+  if (names?.length) {
+    const Employee = (await import('../models/Employee.js')).default;
+    const escaped = names.map((n) => String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const emps = await Employee.find({
+      $or: escaped.map((n) => ({ fullName: new RegExp(n, 'i') })),
+    }).select('_id fullName');
+    if (!emps.length) throw new AppError('No matching employees found', 404);
+    employeeFilter = { employee: { $in: emps.map((e) => e._id) } };
+  }
+
+  const loans = await Loan.find(employeeFilter);
+  const clearedEmployees = new Set();
+
+  for (const loan of loans) {
+    const empId = String(loan.employee);
+    for (const wp of loan.weekPayments || []) {
+      if (wp.year && wp.month && wp.week != null) {
+        await syncPayrollIou(loan.employee, wp.year, wp.month, wp.week, 0);
+      }
+    }
+    clearedEmployees.add(empId);
+    await loan.deleteOne();
+  }
+
+  // Also clear payslips for named staff even if loan already deleted
+  if (names?.length) {
+    const Employee = (await import('../models/Employee.js')).default;
+    const escaped = names.map((n) => String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const emps = await Employee.find({
+      $or: escaped.map((n) => ({ fullName: new RegExp(n, 'i') })),
+    }).select('_id');
+    for (const e of emps) clearedEmployees.add(String(e._id));
+  }
+
+  for (const empId of clearedEmployees) {
+    await clearEmployeeIouEverywhere(empId);
+  }
+
+  res.json({
+    message: `Reset IOU for ${clearedEmployees.size} employee(s); deleted ${loans.length} loan record(s)`,
+    employeesCleared: clearedEmployees.size,
+    loansDeleted: loans.length,
+  });
 });
 
 export const loanSummary = asyncHandler(async (req, res) => {

@@ -72,6 +72,12 @@ export default function TimesheetsPage() {
   const [localWeeks, setLocalWeeks] = useState([]);
   const [attendanceFile, setAttendanceFile] = useState(null);
   const timesheetDirty = useRef(false);
+  const pendingSave = useRef(false);
+  const localWeeksRef = useRef([]);
+
+  useEffect(() => {
+    localWeeksRef.current = localWeeks;
+  }, [localWeeks]);
 
   useEffect(() => {
     if (!timesheet?.weeks) return;
@@ -129,21 +135,51 @@ export default function TimesheetsPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => timesheetApi.update(timesheet._id, { weeks: localWeeks }),
-    onSuccess: () => {
-      timesheetDirty.current = false;
-      qc.invalidateQueries({ queryKey: ['timesheet', year, month] });
-      qc.invalidateQueries({ queryKey: ['payrolls'] });
+    mutationFn: (weeks) => timesheetApi.update(timesheet._id, { weeks }),
+    onSuccess: (data) => {
+      // Only clear dirty if nothing new was typed during the request
+      if (!pendingSave.current) timesheetDirty.current = false;
+      // Update cache without a full refetch (avoids racing another autosave)
+      if (data?._id) {
+        qc.setQueryData(['timesheet', year, month], data);
+      }
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Autosave failed'),
+    onError: (err) => {
+      const msg = err.response?.data?.message || 'Autosave failed';
+      // Soft conflict — schedule another save; don't dump the raw Mongo message
+      if (err.response?.status === 409 || /version|matching document/i.test(msg)) {
+        timesheetDirty.current = true;
+        pendingSave.current = true;
+        return;
+      }
+      toast.error(msg.length > 120 ? 'Could not save timesheet — try again' : msg);
+    },
+    onSettled: () => {
+      if (pendingSave.current && timesheetDirty.current) {
+        pendingSave.current = false;
+        // Flush latest localWeeks after in-flight save finishes
+        setTimeout(() => {
+          if (timesheetDirty.current && timesheet?._id) {
+            saveMutation.mutate(localWeeksRef.current);
+          }
+        }, 200);
+      } else {
+        pendingSave.current = false;
+      }
+    },
   });
 
   // Autosave timesheet edits without pressing Save
   useEffect(() => {
     if (!timesheet?._id || !timesheetDirty.current) return undefined;
     const t = setTimeout(() => {
-      if (timesheetDirty.current) saveMutation.mutate();
-    }, 700);
+      if (!timesheetDirty.current) return;
+      if (saveMutation.isPending) {
+        pendingSave.current = true;
+        return;
+      }
+      saveMutation.mutate(localWeeksRef.current);
+    }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localWeeks, timesheet?._id]);
@@ -216,9 +252,9 @@ export default function TimesheetsPage() {
       };
       const inH = parse(d.clockIn);
       const outH = parse(d.clockOut);
-      // Auto 30‑min break when both clocks set and break not manually set
+      // Auto 30‑min break when both clocks set (not Saturday) and break not manually set
       if (inH != null && outH != null && !d.breakManual) {
-        d.breakHours = 0.5;
+        d.breakHours = dayKey === 'saturday' ? 0 : 0.5;
       }
       if (inH != null && outH != null) {
         let hours = outH - inH - (Number(d.breakHours) || 0);
@@ -316,7 +352,7 @@ export default function TimesheetsPage() {
             <Button
               type="button"
               onClick={async () => {
-                if (timesheetDirty.current) await saveMutation.mutateAsync();
+                if (timesheetDirty.current) await saveMutation.mutateAsync(localWeeksRef.current);
                 generateMut.mutate();
               }}
               disabled={!timesheet || generateMut.isPending}

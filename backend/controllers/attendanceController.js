@@ -405,7 +405,8 @@ const applyClockToEntry = ({
     entry.days[dayKey].breakHours = breakHours;
     entry.days[dayKey].breakManual = true;
   } else if (clockIn && clockOut && !entry.days[dayKey].breakManual) {
-    entry.days[dayKey].breakHours = 0.5;
+    // No auto break on Saturday
+    entry.days[dayKey].breakHours = dayKey === 'saturday' ? 0 : 0.5;
   }
   recalculateEntry(entry, emp.hourlyRate || 0, settings);
 };

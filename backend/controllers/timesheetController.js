@@ -15,6 +15,24 @@ const getSettings = async () => {
   return s;
 };
 
+/** Autosave / concurrent edits often hit VersionError — retry last-write-wins */
+const saveTimesheetRetry = async (loadFn, applyFn, maxAttempts = 5) => {
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const ts = await loadFn();
+    if (!ts) throw new AppError('Timesheet not found', 404);
+    await applyFn(ts);
+    try {
+      await ts.save();
+      return ts;
+    } catch (err) {
+      lastErr = err;
+      if (err.name !== 'VersionError') throw err;
+    }
+  }
+  throw lastErr;
+};
+
 export const listTimesheets = asyncHandler(async (req, res) => {
   const filter = {};
   if (req.query.year) filter.year = Number(req.query.year);
@@ -74,31 +92,49 @@ export const getOrCreateTimesheet = asyncHandler(async (req, res) => {
     });
   }
 
-  const changed = await syncActiveEmployees(ts, settings);
+  const rateCache = new Map();
+  const getRate = async (empId) => {
+    const key = String(empId);
+    if (rateCache.has(key)) return rateCache.get(key);
+    const emp = await Employee.findById(empId).select('hourlyRate');
+    const rate = emp?.hourlyRate || 0;
+    rateCache.set(key, rate);
+    return rate;
+  };
 
-  // Recompute hours (applies default 30‑min break when not manually overridden)
-  let hoursChanged = false;
-  for (const week of ts.weeks || []) {
-    for (const entry of week.entries || []) {
-      const before = entry.weeklyHours;
-      const empId = entry.employee?._id || entry.employee;
-      const emp = await Employee.findById(empId).select('hourlyRate');
-      recalculateEntry(entry, emp?.hourlyRate || 0, settings);
-      if (Number(before) !== Number(entry.weeklyHours)) hoursChanged = true;
-      // Also detect break auto-apply
-      for (const day of Object.values(entry.days || {})) {
-        if (day?.clockIn && day?.clockOut && !day.breakManual && Number(day.breakHours) === 0.5) {
+  // Sync / recompute with version-conflict retry (only saves when something changed)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const doc = await Timesheet.findOne({ year, month });
+    if (!doc) break;
+    const changed = await syncActiveEmployees(doc, settings);
+    let hoursChanged = false;
+    for (const week of doc.weeks || []) {
+      for (const entry of week.entries || []) {
+        const beforeHrs = entry.weeklyHours;
+        const beforeBreak = JSON.stringify(
+          WEEK_DAYS.map((d) => entry.days?.[d]?.breakHours ?? 0)
+        );
+        const empId = entry.employee?._id || entry.employee;
+        recalculateEntry(entry, await getRate(empId), settings);
+        const afterBreak = JSON.stringify(
+          WEEK_DAYS.map((d) => entry.days?.[d]?.breakHours ?? 0)
+        );
+        if (Number(beforeHrs) !== Number(entry.weeklyHours) || beforeBreak !== afterBreak) {
           hoursChanged = true;
         }
       }
     }
-  }
-  if (changed || hoursChanged) {
-    ts.markModified('weeks');
-    await ts.save();
+    if (!changed && !hoursChanged) break;
+    doc.markModified('weeks');
+    try {
+      await doc.save();
+      break;
+    } catch (err) {
+      if (err.name !== 'VersionError' || attempt === 4) throw err;
+    }
   }
 
-  ts = await Timesheet.findById(ts._id).populate(
+  ts = await Timesheet.findOne({ year, month }).populate(
     'weeks.entries.employee',
     'employeeId fullName hourlyRate department photo status'
   );
@@ -107,74 +143,78 @@ export const getOrCreateTimesheet = asyncHandler(async (req, res) => {
 });
 
 export const updateTimesheet = asyncHandler(async (req, res) => {
-  const ts = await Timesheet.findById(req.params.id);
-  if (!ts) throw new AppError('Timesheet not found', 404);
-
   const settings = await getSettings();
   const { weeks, status } = req.body;
+  const { getWeekPeriod } = await import('../utils/weekPeriod.js');
+  const { isHolidayDate } = await import('../services/calendarService.js');
 
-  if (status) ts.status = status;
+  const ts = await saveTimesheetRetry(
+    () => Timesheet.findById(req.params.id),
+    async (doc) => {
+      if (status) doc.status = status;
 
-  if (weeks) {
-    const { getWeekPeriod } = await import('../utils/weekPeriod.js');
-    const { isHolidayDate } = await import('../services/calendarService.js');
-
-    for (const weekPayload of weeks) {
-      let week = ts.weeks.find((w) => w.weekNumber === weekPayload.weekNumber);
-      if (!week) {
-        week = { weekNumber: weekPayload.weekNumber, entries: [] };
-        ts.weeks.push(week);
-      }
-      if (weekPayload.entries) {
-        const { start } = getWeekPeriod(ts.year, ts.month, week.weekNumber);
-        for (const entryPayload of weekPayload.entries) {
-          const empId = entryPayload.employee?._id || entryPayload.employee;
-          let entry = week.entries.find(
-            (e) => String(e.employee) === String(empId)
-          );
-          if (!entry) {
-            entry = { employee: empId, days: emptyDays() };
-            week.entries.push(entry);
+      if (weeks) {
+        for (const weekPayload of weeks) {
+          let week = doc.weeks.find((w) => w.weekNumber === weekPayload.weekNumber);
+          if (!week) {
+            week = { weekNumber: weekPayload.weekNumber, entries: [] };
+            doc.weeks.push(week);
           }
-          if (entryPayload.days) {
-            for (const day of WEEK_DAYS) {
-              if (entryPayload.days[day]) {
-                const dayIndex = WEEK_DAYS.indexOf(day);
-                const dayDate = new Date(start);
-                dayDate.setDate(start.getDate() + dayIndex);
-                if (await isHolidayDate(dayDate)) {
-                  entry.days[day] = {
-                    clockIn: '',
-                    clockOut: '',
-                    breakHours: 0,
-                    workingHours: 0,
-                    dailyCost: 0,
-                  };
-                  continue;
-                }
-                entry.days[day] = { ...entry.days[day]?.toObject?.() || entry.days[day], ...entryPayload.days[day] };
+          if (weekPayload.entries) {
+            const { start } = getWeekPeriod(doc.year, doc.month, week.weekNumber);
+            for (const entryPayload of weekPayload.entries) {
+              const empId = entryPayload.employee?._id || entryPayload.employee;
+              let entry = week.entries.find(
+                (e) => String(e.employee) === String(empId)
+              );
+              if (!entry) {
+                entry = { employee: empId, days: emptyDays() };
+                week.entries.push(entry);
               }
+              if (entryPayload.days) {
+                for (const day of WEEK_DAYS) {
+                  if (entryPayload.days[day]) {
+                    const dayIndex = WEEK_DAYS.indexOf(day);
+                    const dayDate = new Date(start);
+                    dayDate.setDate(start.getDate() + dayIndex);
+                    if (await isHolidayDate(dayDate)) {
+                      entry.days[day] = {
+                        clockIn: '',
+                        clockOut: '',
+                        breakHours: 0,
+                        workingHours: 0,
+                        dailyCost: 0,
+                      };
+                      continue;
+                    }
+                    entry.days[day] = {
+                      ...(entry.days[day]?.toObject?.() || entry.days[day] || {}),
+                      ...entryPayload.days[day],
+                    };
+                  }
+                }
+              }
+              if (entryPayload.weeklyNotes !== undefined) {
+                entry.weeklyNotes = entryPayload.weeklyNotes;
+              }
+              const emp = await Employee.findById(empId);
+              recalculateEntry(entry, emp?.hourlyRate || 0, settings);
             }
           }
-          if (entryPayload.weeklyNotes !== undefined) {
-            entry.weeklyNotes = entryPayload.weeklyNotes;
-          }
-          const emp = await Employee.findById(empId);
-          recalculateEntry(entry, emp?.hourlyRate || 0, settings);
         }
       }
-    }
-  }
 
-  let monthlyHours = 0;
-  for (const week of ts.weeks) {
-    for (const entry of week.entries) {
-      monthlyHours += entry.weeklyHours || 0;
+      let monthlyHours = 0;
+      for (const week of doc.weeks) {
+        for (const entry of week.entries) {
+          monthlyHours += entry.weeklyHours || 0;
+        }
+      }
+      doc.monthlyHours = round2(monthlyHours);
+      ensureTimesheetWeeks(doc);
+      doc.markModified('weeks');
     }
-  }
-  ts.monthlyHours = round2(monthlyHours);
-  ensureTimesheetWeeks(ts);
-  await ts.save();
+  );
 
   const populated = await Timesheet.findById(ts._id).populate(
     'weeks.entries.employee',
@@ -194,14 +234,7 @@ export const updateDay = asyncHandler(async (req, res) => {
   const { day, data } = req.body;
   if (!WEEK_DAYS.includes(day)) throw new AppError('Invalid day');
 
-  let ts = await Timesheet.findOne({ year: Number(year), month: Number(month) });
-  if (!ts) throw new AppError('Timesheet not found', 404);
-
   const settings = await getSettings();
-  const week = ts.weeks.find((w) => w.weekNumber === Number(weekNumber));
-  if (!week) throw new AppError('Week not found', 404);
-
-  // Block clock edits on public holidays
   const { getWeekPeriod } = await import('../utils/weekPeriod.js');
   const { isHolidayDate } = await import('../services/calendarService.js');
   const { start } = getWeekPeriod(Number(year), Number(month), Number(weekNumber));
@@ -215,22 +248,33 @@ export const updateDay = asyncHandler(async (req, res) => {
     );
   }
 
-  let entry = week.entries.find((e) => String(e.employee) === String(employeeId));
-  if (!entry) {
-    entry = { employee: employeeId, days: emptyDays() };
-    week.entries.push(entry);
-  }
+  const ts = await saveTimesheetRetry(
+    () => Timesheet.findOne({ year: Number(year), month: Number(month) }),
+    async (doc) => {
+      const week = doc.weeks.find((w) => w.weekNumber === Number(weekNumber));
+      if (!week) throw new AppError('Week not found', 404);
 
-  entry.days[day] = { ...entry.days[day]?.toObject?.() || entry.days[day], ...data };
-  const emp = await Employee.findById(employeeId);
-  recalculateEntry(entry, emp?.hourlyRate || 0, settings);
+      let entry = week.entries.find((e) => String(e.employee) === String(employeeId));
+      if (!entry) {
+        entry = { employee: employeeId, days: emptyDays() };
+        week.entries.push(entry);
+      }
 
-  let monthlyHours = 0;
-  for (const w of ts.weeks) {
-    for (const e of w.entries) monthlyHours += e.weeklyHours || 0;
-  }
-  ts.monthlyHours = round2(monthlyHours);
-  await ts.save();
+      entry.days[day] = {
+        ...(entry.days[day]?.toObject?.() || entry.days[day] || {}),
+        ...data,
+      };
+      const emp = await Employee.findById(employeeId);
+      recalculateEntry(entry, emp?.hourlyRate || 0, settings);
+
+      let monthlyHours = 0;
+      for (const w of doc.weeks) {
+        for (const e of w.entries) monthlyHours += e.weeklyHours || 0;
+      }
+      doc.monthlyHours = round2(monthlyHours);
+      doc.markModified('weeks');
+    }
+  );
 
   const populated = await Timesheet.findById(ts._id).populate(
     'weeks.entries.employee',

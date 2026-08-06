@@ -24,6 +24,10 @@ export const errorHandler = (err, req, res, next) => {
       .map((e) => e.message)
       .join(', ') || message;
   }
+  if (err.name === 'VersionError') {
+    statusCode = 409;
+    message = 'Timesheet was updated elsewhere — please try again';
+  }
   if (err.name === 'CastError') {
     statusCode = 400;
     message = 'Invalid ID';

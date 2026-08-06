@@ -11,6 +11,10 @@ export const resolveDoubleTime = (dayKey, currentFlag, settings = {}) => {
 
 export const DEFAULT_BREAK_HOURS = 0.5;
 
+/** No auto 30‑min break on Saturday (half-day / short shift) */
+export const autoBreakHoursForDay = (dayKey) =>
+  dayKey === 'saturday' ? 0 : DEFAULT_BREAK_HOURS;
+
 export const recalculateEntry = (entry, hourlyRate = 0, settings = {}) => {
   let weeklyHours = 0;
   let weeklyCost = 0;
@@ -18,9 +22,9 @@ export const recalculateEntry = (entry, hourlyRate = 0, settings = {}) => {
 
   for (const day of WEEK_DAYS) {
     const d = entry.days[day] || {};
-    // Auto-deduct 30 min break when both clocks are set, unless manually overridden
+    // Auto-deduct break when both clocks are set, unless manually overridden
     if (d.clockIn && d.clockOut && !d.breakManual) {
-      d.breakHours = DEFAULT_BREAK_HOURS;
+      d.breakHours = autoBreakHoursForDay(day);
     }
     const hours = calcDailyHours(d.clockIn, d.clockOut, d.breakHours);
     d.workingHours = hours;

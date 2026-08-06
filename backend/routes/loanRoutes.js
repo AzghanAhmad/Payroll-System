@@ -6,6 +6,7 @@ const router = Router();
 router.use(protect);
 
 router.get('/summary/stats', ctrl.loanSummary);
+router.post('/reset', authorize('admin', 'hr'), ctrl.resetAllIou);
 router.get('/', ctrl.listLoans);
 router.get('/:id', ctrl.getLoan);
 router.post('/', authorize('admin', 'manager', 'hr'), ctrl.createLoan);
