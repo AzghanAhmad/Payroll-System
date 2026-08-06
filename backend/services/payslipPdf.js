@@ -31,7 +31,7 @@ export const buildPayslipFilename = (payslip, ctx = {}) => {
   return `${name}_${monthLabel}_${y}_${period}_Payslip.pdf`;
 };
 
-/** Ensure PDF exists on disk with the current naming scheme (regenerates legacy names). */
+/** Ensure PDF exists on disk with current naming + content (always regenerates). */
 export const resolvePayslipPdfPath = async (payslipIdOrDoc) => {
   let payslip =
     typeof payslipIdOrDoc === 'object' && payslipIdOrDoc?._id
@@ -48,17 +48,21 @@ export const resolvePayslipPdfPath = async (payslipIdOrDoc) => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const expected = buildPayslipFilename(payslip);
-  const expectedPath = path.join(dir, expected);
   const currentBase = payslip.pdfPath ? path.basename(payslip.pdfPath) : '';
   const currentPath = currentBase ? path.join(dir, currentBase) : '';
 
-  if (currentBase === expected && fs.existsSync(expectedPath)) {
-    return expectedPath;
-  }
-
-  if (currentPath && fs.existsSync(currentPath) && currentBase !== expected) {
+  // Remove stale file (old QR / wrong name) before regenerating
+  if (currentPath && fs.existsSync(currentPath)) {
     try {
       fs.unlinkSync(currentPath);
+    } catch {
+      /* ignore */
+    }
+  }
+  const expectedPath = path.join(dir, expected);
+  if (currentBase !== expected && fs.existsSync(expectedPath)) {
+    try {
+      fs.unlinkSync(expectedPath);
     } catch {
       /* ignore */
     }
@@ -172,23 +176,41 @@ export const generatePayslipPdf = async (payslipId) => {
   }
 
   try {
-    const qrData = await QRCode.toDataURL(
-      JSON.stringify({
-        id: payslip._id,
-        employee: emp.employeeId,
-        net: payslip.netPay,
-        period: payslip.periodLabel,
-      })
-    );
+    const company = settings.companyName || 'Payroll';
+    const period =
+      payslip.periodLabel ||
+      (payslip.type === 'weekly' && payslip.week
+        ? `Week ${payslip.week}`
+        : `${payslip.month}/${payslip.year}`);
+    // Plain text so phone scanners show a readable summary (not raw JSON / id)
+    const qrText = [
+      `${company} — Official Payslip`,
+      `Employee: ${emp.fullName || emp.employeeId || '—'}`,
+      emp.employeeId ? `Staff ID: ${emp.employeeId}` : null,
+      `Period: ${period}`,
+      `Pay Day: ${fmtDate(payslip.payDay)}`,
+      `Gross: ${money(payslip.grossPay, symbol)}`,
+      `Net Pay: ${money(payslip.netPay, symbol)}`,
+      'Digitally generated & verified',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const qrData = await QRCode.toDataURL(qrText, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 200,
+    });
     const qrBuf = Buffer.from(qrData.replace(/^data:image\/png;base64,/, ''), 'base64');
     doc.image(qrBuf, 50, 700, { width: 70 });
   } catch {
     // optional
   }
 
-  doc.fontSize(8).fillColor('#94A3B8').text('Digitally generated payslip', 140, 720);
+  doc.fontSize(8).fillColor('#94A3B8').text('Scan for payslip summary', 140, 720);
+  doc.text('Digitally generated payslip', 140, 732);
   if (settings.digitalSignature) {
-    doc.text(`Authorized: ${settings.digitalSignature}`, 140, 735);
+    doc.text(`Authorized: ${settings.digitalSignature}`, 140, 744);
   }
 
   doc.end();
