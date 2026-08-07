@@ -10,8 +10,8 @@ import AuthLayout from './AuthLayout';
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('alphacc2018@gmail.com');
-  const [password, setPassword] = useState('AlphaCC@Pay2018!xK9');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e) => {
@@ -38,7 +38,7 @@ export default function LoginPage() {
           label="Email"
           type="email"
           autoComplete="email"
-          placeholder="alphacc2018@gmail.com"
+          placeholder="Enter your email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
