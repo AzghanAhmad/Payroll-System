@@ -3,7 +3,6 @@ import User from '../models/User.js';
 import { asyncHandler } from '../utils/helpers.js';
 import { AppError } from '../middleware/errorMiddleware.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
-import { sendMail } from '../services/emailService.js';
 
 const authResponse = async (user) => {
   const accessToken = signAccessToken(user._id);
@@ -28,7 +27,10 @@ export const register = asyncHandler(async (req, res) => {
 });
 
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const email = String(req.body.email || '')
+    .trim()
+    .toLowerCase();
+  const password = String(req.body.password || '');
   if (!email || !password) throw new AppError('Email and password are required');
 
   const user = await User.findOne({ email }).select('+password');
@@ -73,33 +75,48 @@ export const me = asyncHandler(async (req, res) => {
   res.json({ user: req.user });
 });
 
+const generateTempPassword = () => {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%';
+  const pick = (set, n) => {
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      out += set[crypto.randomInt(0, set.length)];
+    }
+    return out;
+  };
+  // Strong, readable temp password e.g. Kp7!mQ2xN4aB
+  return `${pick(upper, 2)}${pick(lower, 3)}${pick(digits, 2)}${pick(symbols, 1)}${pick(lower, 2)}${pick(digits, 2)}`;
+};
+
 export const forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-  const user = await User.findOne({ email });
+  const email = String(req.body.email || '')
+    .trim()
+    .toLowerCase();
+  if (!email) throw new AppError('Email is required');
+
+  const user = await User.findOne({ email }).select('+password');
   if (!user) {
-    return res.json({ message: 'If that email exists, a reset link was sent' });
+    throw new AppError('No account found with that email', 404);
+  }
+  if (!user.isActive) {
+    throw new AppError('This account is disabled', 403);
   }
 
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-  user.resetPasswordExpire = Date.now() + 60 * 60 * 1000;
-  await user.save({ validateBeforeSave: false });
+  const newPassword = generateTempPassword();
+  user.password = newPassword;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpire = undefined;
+  user.refreshToken = undefined;
+  await user.save();
 
-  const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${resetToken}`;
-  try {
-    await sendMail({
-      to: user.email,
-      subject: 'Password Reset',
-      text: `Reset your password: ${resetUrl}`,
-      html: `<p>Reset your password: <a href="${resetUrl}">${resetUrl}</a></p>`,
-    });
-  } catch {
-    // SMTP may be unconfigured in dev
-  }
-
+  // Show new password on the website only (no email / reset link)
   res.json({
-    message: 'If that email exists, a reset link was sent',
-    ...(process.env.NODE_ENV !== 'production' ? { resetToken } : {}),
+    message: 'Password reset successfully. Copy the new password below and sign in.',
+    email: user.email,
+    newPassword,
   });
 });
 

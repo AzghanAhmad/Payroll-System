@@ -21,15 +21,21 @@ const getTransporter = () => {
 export const sendMail = async ({ to, subject, text, html, attachments }) => {
   const tx = getTransporter();
   if (!tx) {
-    console.log(`[email skipped] To: ${to} | ${subject}`);
-    return { skipped: true };
+    console.log(`[email skipped — configure SMTP_HOST] To: ${to} | ${subject}`);
+    return { skipped: true, reason: 'SMTP not configured' };
   }
-  return tx.sendMail({
-    from: process.env.EMAIL_FROM || 'noreply@payroll.local',
-    to,
-    subject,
-    text,
-    html,
-    attachments,
-  });
+  try {
+    const info = await tx.sendMail({
+      from: process.env.EMAIL_FROM || 'noreply@payroll.local',
+      to,
+      subject,
+      text,
+      html,
+      attachments,
+    });
+    return { skipped: false, messageId: info.messageId };
+  } catch (err) {
+    console.error('[email failed]', err.message);
+    return { skipped: true, reason: err.message || 'send failed' };
+  }
 };
