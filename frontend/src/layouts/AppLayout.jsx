@@ -23,8 +23,10 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/utils/helpers';
+import { employeeApi } from '@/services';
 
 const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -54,6 +56,20 @@ const QUICK_ACTIONS = [
   { label: 'Employees', path: '/employees', icon: Users },
 ];
 
+const employeeTargets = (emp) => {
+  const name = encodeURIComponent(emp.fullName || '');
+  const id = encodeURIComponent(emp._id || '');
+  return [
+    { to: `/employees?search=${name}`, label: emp.fullName, meta: 'Employees', icon: Users, isEmployee: true },
+    { to: `/staff?search=${name}&tab=info`, label: emp.fullName, meta: 'Staff Info', icon: IdCard, isEmployee: true },
+    { to: `/staff?search=${name}&tab=hours`, label: emp.fullName, meta: 'Working Hours', icon: CalendarRange, isEmployee: true },
+    { to: `/timesheets?employee=${id}`, label: emp.fullName, meta: 'Timesheets', icon: Clock, isEmployee: true },
+    { to: `/leave?employee=${id}&tab=dashboard`, label: emp.fullName, meta: 'Leave Tracker', icon: Palmtree, isEmployee: true },
+    { to: `/payslips?employee=${id}`, label: emp.fullName, meta: 'Payslips', icon: FileText, isEmployee: true },
+    { to: `/iou-tracker?employee=${id}`, label: emp.fullName, meta: 'IOU Tracker', icon: HandCoins, isEmployee: true },
+  ];
+};
+
 export default function AppLayout({ children, title }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -66,11 +82,22 @@ export default function AppLayout({ children, title }) {
 
   const filtered = links.filter((l) => !l.roles || l.roles.includes(user?.role));
 
+  const { data: empData } = useQuery({
+    queryKey: ['employees-search-layout'],
+    queryFn: () => employeeApi.list({ status: 'active', limit: 200 }),
+    staleTime: 60_000,
+  });
+
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
-    return filtered.filter((l) => l.label.toLowerCase().includes(q)).slice(0, 8);
-  }, [search, filtered]);
+    const pageResults = filtered.filter((l) => l.label.toLowerCase().includes(q)).slice(0, 4);
+    const employees = (empData?.items || [])
+      .filter((e) => e.fullName?.toLowerCase().includes(q) || e.employeeId?.toLowerCase().includes(q))
+      .slice(0, 2)
+      .flatMap((e) => employeeTargets(e));
+    return [...pageResults, ...employees].slice(0, 16);
+  }, [search, filtered, empData]);
 
   const onLogout = async () => {
     setProfileOpen(false);
@@ -203,17 +230,21 @@ export default function AppLayout({ children, title }) {
               {searchOpen && search.trim() && (
                 <div className="absolute top-full left-0 right-0 mt-1.5 rounded-[14px] border border-border bg-white shadow-lg overflow-hidden z-50">
                   {searchResults.length === 0 ? (
-                    <p className="px-4 py-3 text-sm text-muted">No pages match “{search}”</p>
+                    <p className="px-4 py-3 text-sm text-muted">No results for "{search}"</p>
                   ) : (
-                    searchResults.map(({ to, label, icon: Icon }) => (
+                    searchResults.map(({ to, label, icon: Icon, isEmployee, meta }) => (
                       <button
                         key={to}
                         type="button"
                         onClick={() => goSearch(to)}
                         className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50 cursor-pointer"
                       >
-                        <Icon size={16} className="text-slate-400" />
-                        {label}
+                        <Icon size={16} className={isEmployee ? 'text-blue-500' : 'text-slate-400'} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate">{label}</div>
+                          {isEmployee && <div className="text-[11px] text-muted truncate">{meta}</div>}
+                        </div>
+                        {isEmployee && <span className="text-xs text-muted">Staff</span>}
                       </button>
                     ))
                   )}

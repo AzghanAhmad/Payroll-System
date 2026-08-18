@@ -1,6 +1,6 @@
-import { useMemo, useState, Fragment } from 'react';
+import { useMemo, useState, Fragment, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -11,9 +11,15 @@ import { splitWeekHours } from '@/utils/weekPeriod';
 
 export default function StaffInfoPage() {
   const now = new Date();
+  const [searchParams] = useSearchParams();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab] = useState('info'); // info | hours | settings
+  const [tab, setTab] = useState(searchParams.get('tab') || 'info'); // info | hours | settings
+  const employeeSearch = (searchParams.get('search') || '').trim().toLowerCase();
+
+  useEffect(() => {
+    setTab(searchParams.get('tab') || 'info');
+  }, [searchParams]);
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const { data: employeesData, isLoading } = useQuery({
@@ -26,6 +32,14 @@ export default function StaffInfoPage() {
   });
 
   const employees = employeesData?.items || [];
+  const filteredEmployees = useMemo(() => {
+    if (!employeeSearch) return employees;
+    return employees.filter(
+      (e) =>
+        String(e.fullName || '').toLowerCase().includes(employeeSearch) ||
+        String(e.employeeId || '').toLowerCase().includes(employeeSearch)
+    );
+  }, [employees, employeeSearch]);
   const cap = settings?.normalHoursCap ?? 40;
 
   const hoursByEmployee = useMemo(() => {
@@ -119,7 +133,7 @@ export default function StaffInfoPage() {
                 </thead>
                 <tbody>
                   {isLoading && <tr><td className="px-4 py-6" colSpan={13}>Loading…</td></tr>}
-                  {employees.map((e) => (
+                  {filteredEmployees.map((e) => (
                     <tr key={e._id} className="border-b border-border/50 hover:bg-slate-50/70">
                       <td className="px-3 py-2 whitespace-nowrap">{e.employeeId}</td>
                       <td className="px-3 py-2 font-medium whitespace-nowrap">{e.fullName}</td>
@@ -172,7 +186,7 @@ export default function StaffInfoPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {employees.map((e) => {
+                  {filteredEmployees.map((e) => {
                     const h = hoursByEmployee[e._id] || {};
                     return (
                       <tr key={e._id} className="border-b border-border/50">

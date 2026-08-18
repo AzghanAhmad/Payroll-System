@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { Download } from 'lucide-react';
 import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -8,8 +9,22 @@ import { Select } from '@/components/ui/Input';
 import { statutoryApi } from '@/services';
 import { MONTHS, formatMoney, yearOptions } from '@/utils/helpers';
 
+const downloadCsv = (filename, headers, rows) => {
+  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+
+const displayMoney = (value) => (Number(value) ? formatMoney(value) : '-');
 
 const cellInput =
   'w-full min-w-[72px] rounded-md border border-amber-300 bg-amber-50 px-1 py-1 text-right text-xs outline-none focus:ring-2 focus:ring-amber-200';
@@ -94,10 +109,16 @@ export default function StatutoryPage() {
       const row = next.paye.rows.find((r) => String(r.employeeId) === String(employeeId));
       if (!row) return prev;
       row[field] = value;
-      row.total12 = Math.round((Number(row.week1 || 0) + Number(row.week2 || 0)) * 100) / 100;
-      row.total34 = Math.round((Number(row.week3 || 0) + Number(row.week4 || 0)) * 100) / 100;
-      row.total5 = Math.round(Number(row.week5 || 0) * 100) / 100;
-      row.grandTotal = Math.round((row.total12 + row.total34 + row.total5) * 100) / 100;
+      row.payPeriod1 = Math.round(Number(row.payPeriod1 || 0) * 100) / 100;
+      row.payPeriod2 = Math.round(Number(row.payPeriod2 || 0) * 100) / 100;
+      row.payPeriod3 = Math.round(Number(row.payPeriod3 || 0) * 100) / 100;
+      row.taxPeriod1 = Math.round(Number(row.taxPeriod1 || 0) * 100) / 100;
+      row.taxPeriod2 = Math.round(Number(row.taxPeriod2 || 0) * 100) / 100;
+      row.taxPeriod3 = Math.round(Number(row.taxPeriod3 || 0) * 100) / 100;
+      row.grossTotal =
+        Math.round((Number(row.payPeriod1 || 0) + Number(row.payPeriod2 || 0) + Number(row.payPeriod3 || 0)) * 100) / 100;
+      row.totalTax =
+        Math.round((Number(row.taxPeriod1 || 0) + Number(row.taxPeriod2 || 0) + Number(row.taxPeriod3 || 0)) * 100) / 100;
       return next;
     });
     queueOverride({ sheet: 'paye', rowKey: String(employeeId), field, value, week: 0 });
@@ -145,6 +166,42 @@ export default function StatutoryPage() {
     });
   };
 
+  const downloadPaye = () => {
+    const rows = (view?.paye?.rows || []).map((r) => [
+      r.name, r.npfNumber, r.payPeriod, r.payPeriod1, r.payPeriod2, r.payPeriod3, r.grossTotal,
+      r.taxPeriod1, r.taxPeriod2, r.taxPeriod3, r.totalTax, r.npfTotal, r.accTotal,
+    ]);
+    downloadCsv(`PAYE_${MONTHS[month - 1]}_${year}.csv`,
+      ['Employee', 'NPF Number', 'Pay Period', 'Salary 1', 'Salary 2', 'Salary 3', 'Salary Total', 'Tax 1', 'Tax 2', 'Tax 3', 'Total Tax', 'NPF (9%)', 'ACC (1%)'], rows);
+  };
+
+  const downloadNpf = () => {
+    const rows = (view?.npf?.rows || []).map((r) => [
+      r.npfNumber, r.name, r.transactionType,
+      ...(r.weeks || []).flatMap((w) => [w.employee, w.employer]),
+      r.total,
+    ]);
+    const wHeaders = [1, 2, 3, 4, 5].flatMap((w) => [`W${w} Employee`, `W${w} Employer`]);
+    downloadCsv(`NPF_${MONTHS[month - 1]}_${year}.csv`, ['NPF #', 'Name', 'Type', ...wHeaders, 'Total'], rows);
+  };
+
+  const downloadAcc = () => {
+    const rows = (view?.acc?.rows || []).map((r) => [
+      r.row, r.name,
+      ...(r.weeks || []).flatMap((w) => [w.employee, w.employer]),
+      r.total,
+    ]);
+    const wHeaders = [1, 2, 3, 4, 5].flatMap((w) => [`W${w} Employee`, `W${w} Employer`]);
+    downloadCsv(`ACC_${MONTHS[month - 1]}_${year}.csv`, ['#', 'Name', ...wHeaders, 'Total'], rows);
+  };
+
+  const downloadTotals = () => {
+    const t = view?.statutoryTotals || {};
+    downloadCsv(`Statutory_Totals_${MONTHS[month - 1]}_${year}.csv`,
+      ['Type', 'Amount'],
+      [['PAYE', t.paye], ['NPF', t.npf], ['ACC', t.acc], ['TOTAL', t.total]]);
+  };
+
   const tabs = [
     { id: 'paye', label: 'PAYE Sheet' },
     { id: 'npf', label: 'NPF Sheet' },
@@ -153,6 +210,10 @@ export default function StatutoryPage() {
   ];
 
   const view = local || data;
+  const payeRows = view?.paye?.rows || [];
+  const payeGrossTotal = Math.round(payeRows.reduce((s, r) => s + Number(r.grossTotal || 0), 0) * 100) / 100;
+  const payeTaxTotal = Math.round(payeRows.reduce((s, r) => s + Number(r.totalTax || 0), 0) * 100) / 100;
+  const payeSummary = view?.paye?.summary || {};
 
   return (
     <AppLayout title="Statutory Sheets">
@@ -171,6 +232,19 @@ export default function StatutoryPage() {
             </Select>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (tab === 'paye') downloadPaye();
+                else if (tab === 'npf') downloadNpf();
+                else if (tab === 'acc') downloadAcc();
+                else downloadTotals();
+              }}
+            >
+              <Download size={14} className="mr-1" /> Download
+            </Button>
             <span className="text-xs text-muted px-2 py-1 rounded-lg bg-amber-50 border border-amber-200">
               {saveMut.isPending ? 'Saving…' : 'Yellow cells edit & autosave'}
             </span>
@@ -191,71 +265,157 @@ export default function StatutoryPage() {
         {isLoading && <Card><p className="text-muted text-sm">Loading…</p></Card>}
 
         {!isLoading && tab === 'paye' && (
-          <Card className="overflow-hidden p-0">
-            <div className="px-4 py-3 border-b bg-slate-50">
-              <h3 className="font-heading">PAYE Sheet — {MONTHS[month - 1]} {year}</h3>
-              <p className="text-xs text-muted">Edit week gross amounts — changes persist to the backend</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[1100px]">
-                <thead className="bg-slate-100">
-                  <tr className="text-left">
-                    <th className="px-2 py-2" rowSpan={2}>#</th>
-                    <th className="px-2 py-2" rowSpan={2}>Employee name</th>
-                    <th className="px-2 py-2 text-center" colSpan={3}>1</th>
-                    <th className="px-2 py-2 text-center" colSpan={3}>2</th>
-                    <th className="px-2 py-2 text-center" colSpan={2}>3</th>
-                    <th className="px-2 py-2 text-right" rowSpan={2}>Total Tax</th>
-                    <th className="px-2 py-2 text-right" rowSpan={2}>Total</th>
-                  </tr>
-                  <tr className="bg-slate-50 text-muted">
-                    <th className="px-2 py-1 text-right">Week 1</th>
-                    <th className="px-2 py-1 text-right">Week 2</th>
-                    <th className="px-2 py-1 text-right">Total</th>
-                    <th className="px-2 py-1 text-right">Week 3</th>
-                    <th className="px-2 py-1 text-right">Week 4</th>
-                    <th className="px-2 py-1 text-right">Total</th>
-                    <th className="px-2 py-1 text-right">Week 5</th>
-                    <th className="px-2 py-1 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(view?.paye?.rows || []).map((r) => (
-                    <tr key={r.employeeId} className="border-b border-border/40 hover:bg-slate-50/60">
-                      <td className="px-2 py-2">{r.row}</td>
-                      <td className="px-2 py-2 font-medium whitespace-nowrap">{r.name}</td>
-                      {['week1', 'week2'].map((f) => (
-                        <td key={f} className="px-1 py-1">
-                          <EditableNum value={r[f]} onCommit={(n) => updatePaye(r.employeeId, f, n)} />
-                        </td>
-                      ))}
-                      <td className="px-2 py-2 text-right font-semibold bg-sky-50">{formatMoney(r.total12)}</td>
-                      {['week3', 'week4'].map((f) => (
-                        <td key={f} className="px-1 py-1">
-                          <EditableNum value={r[f]} onCommit={(n) => updatePaye(r.employeeId, f, n)} />
-                        </td>
-                      ))}
-                      <td className="px-2 py-2 text-right font-semibold bg-sky-50">{formatMoney(r.total34)}</td>
-                      <td className="px-1 py-1">
-                        <EditableNum value={r.week5} onCommit={(n) => updatePaye(r.employeeId, 'week5', n)} />
+          <div className="space-y-4">
+            <Card className="overflow-hidden p-0">
+              <div className="border-b bg-emerald-50 px-4 py-3">
+                <h3 className="font-heading">PAYE Sheet — {MONTHS[month - 1]} {year}</h3>
+                <p className="text-xs text-muted">
+                  Rebuilt to match the authority form. Yellow cells can still be adjusted and autosaved.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1500px] text-xs border-collapse">
+                  <tbody>
+                    <tr className="bg-white">
+                      <td className="border px-3 py-2 font-semibold uppercase">Payer / Employer:</td>
+                      <td className="border px-3 py-2 bg-emerald-100 font-semibold" colSpan={4}>
+                        {view?.employer?.companyName || '—'}
                       </td>
-                      <td className="px-2 py-2 text-right font-semibold bg-sky-50">{formatMoney(r.total5)}</td>
-                      <td className="px-1 py-1">
-                        <EditableNum value={r.totalTax} onCommit={(n) => updatePaye(r.employeeId, 'totalTax', n)} />
+                      <td className="border px-3 py-2 font-semibold uppercase">Payment for the month of</td>
+                      <td className="border px-3 py-2 bg-emerald-100 text-center font-semibold" colSpan={4}>
+                        {MONTHS[month - 1]}-{String(year).slice(-2)}
                       </td>
-                      <td className="px-2 py-2 text-right font-semibold bg-emerald-50">{formatMoney(r.grandTotal)}</td>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-100 font-semibold">
-                    <td className="px-2 py-3" colSpan={11}>TOTAL</td>
-                    <td className="px-2 py-3 text-right">{formatMoney(view?.paye?.totals?.gross)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </Card>
+                    <tr className="bg-white">
+                      <td className="border px-3 py-2 font-semibold uppercase">Tax Identification Number</td>
+                      <td className="border px-3 py-2 bg-emerald-100 font-semibold" colSpan={2}>
+                        {view?.employer?.taxIdentificationNumber || '—'}
+                      </td>
+                      <td className="border px-3 py-2 font-semibold uppercase">Address:</td>
+                      <td className="border px-3 py-2 bg-emerald-100" colSpan={6}>
+                        {view?.employer?.companyAddress || '—'}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1500px] text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-center">
+                      <th className="border px-2 py-2 align-bottom" rowSpan={3}>NAME OF EMPLOYEES</th>
+                      <th className="border px-2 py-2 align-bottom" rowSpan={3}>NPF Number</th>
+                      <th className="border px-2 py-2 align-bottom" rowSpan={3}>PAY PERIOD</th>
+                      <th className="border px-2 py-2 font-semibold" colSpan={4}>SALARY / WAGE / SOURCE DEDUCTION PAYMENTS</th>
+                      <th className="border px-2 py-2 font-semibold" colSpan={4}>TAX DEDUCTIONS</th>
+                      <th className="border px-2 py-2 align-bottom" rowSpan={3}>NPF (9%)</th>
+                      <th className="border px-2 py-2 align-bottom" rowSpan={3}>ACC (1%)</th>
+                    </tr>
+                    <tr className="bg-slate-50 text-center">
+                      <th className="border px-2 py-2" colSpan={4}>PAY PERIODS OF THE MONTH</th>
+                      <th className="border px-2 py-2" colSpan={4}>PAY PERIODS OF THE MONTH</th>
+                    </tr>
+                    <tr className="bg-slate-50 text-center text-muted">
+                      <th className="border px-2 py-1">1</th>
+                      <th className="border px-2 py-1">2</th>
+                      <th className="border px-2 py-1">3</th>
+                      <th className="border px-2 py-1">TOTAL</th>
+                      <th className="border px-2 py-1">1</th>
+                      <th className="border px-2 py-1">2</th>
+                      <th className="border px-2 py-1">3</th>
+                      <th className="border px-2 py-1">TOTAL TAX</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payeRows.map((r) => (
+                      <tr key={r.employeeId} className="hover:bg-slate-50/60">
+                        <td className="border px-2 py-2 font-medium whitespace-nowrap">{r.name}</td>
+                        <td className="border px-2 py-2 text-center">{r.npfNumber || '—'}</td>
+                        <td className="border px-2 py-2 text-center">{r.payPeriod || 'Fortnightly'}</td>
+                        {['payPeriod1', 'payPeriod2', 'payPeriod3'].map((f) => (
+                          <td key={f} className="border px-1 py-1 bg-emerald-50">
+                            <EditableNum value={r[f]} onCommit={(n) => updatePaye(r.employeeId, f, n)} />
+                          </td>
+                        ))}
+                        <td className="border px-2 py-2 text-right font-semibold bg-emerald-100">
+                          {displayMoney(r.grossTotal)}
+                        </td>
+                        {['taxPeriod1', 'taxPeriod2', 'taxPeriod3'].map((f) => (
+                          <td key={f} className="border px-1 py-1 bg-amber-50">
+                            <EditableNum value={r[f]} onCommit={(n) => updatePaye(r.employeeId, f, n)} />
+                          </td>
+                        ))}
+                        <td className="border px-2 py-2 text-right font-semibold bg-slate-100">
+                          {displayMoney(r.totalTax)}
+                        </td>
+                        <td className="border px-2 py-2 text-right">{displayMoney(r.npfTotal)}</td>
+                        <td className="border px-2 py-2 text-right">{displayMoney(r.accTotal)}</td>
+                      </tr>
+                    ))}
+                    {!payeRows.length && (
+                      <tr>
+                        <td className="border px-4 py-6 text-muted" colSpan={13}>No PAYE rows for this month.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+
+            <Card className="space-y-6">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.25fr_auto] lg:items-start">
+                <div className="space-y-2">
+                  <h4 className="font-heading">Total Gross Pay From</h4>
+                  <div className="grid grid-cols-[1fr_180px] gap-x-4 gap-y-2 text-sm">
+                    <div>Previous periods</div>
+                    <div className="rounded-md border bg-emerald-50 px-3 py-2 text-right">
+                      {displayMoney(payeSummary.previousGross)}
+                    </div>
+                    <div>This month</div>
+                    <div className="rounded-md border bg-white px-3 py-2 text-right">
+                      {displayMoney(payeSummary.thisMonthGross ?? payeGrossTotal)}
+                    </div>
+                    <div>Total year to date</div>
+                    <div className="rounded-md border bg-white px-3 py-2 text-right">
+                      {displayMoney(payeSummary.yearToDateGross)}
+                    </div>
+                    <div>Tax paid this month</div>
+                    <div className="rounded-md border bg-white px-3 py-2 text-right">
+                      {displayMoney(payeSummary.taxPaidThisMonth ?? payeTaxTotal)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="min-w-[220px] rounded-md border bg-slate-50 px-4 py-3">
+                  <div className="text-sm font-semibold">Total Tax to Pay</div>
+                  <div className="mt-2 text-right text-lg font-heading">
+                    {displayMoney(payeSummary.totalTaxToPay ?? payeTaxTotal)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-sm">
+                <h4 className="font-heading">Declaration:</h4>
+                <p className="italic text-muted">
+                  I solemnly declare that the information provided in this form are true and correct; and I understand
+                  that any misleading or false information is an offence under the Tax Administration Act 2012.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-[220px_1fr] md:items-center">
+                <div className="font-semibold uppercase">Signature of Employer</div>
+                <div className="min-h-12 rounded-md border bg-emerald-50 px-3 py-3">
+                  {view?.employer?.digitalSignature || view?.employer?.companyName || ''}
+                </div>
+                <div className="font-semibold uppercase">Designation</div>
+                <div className="min-h-12 rounded-md border bg-emerald-50 px-3 py-3">
+                  {view?.employer?.companyEmail || view?.employer?.companyPhone || ''}
+                </div>
+              </div>
+            </Card>
+          </div>
         )}
 
         {!isLoading && tab === 'npf' && (

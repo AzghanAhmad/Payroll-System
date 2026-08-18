@@ -112,7 +112,6 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   user.refreshToken = undefined;
   await user.save();
 
-  // Show new password on the website only (no email / reset link)
   res.json({
     message: 'Password reset successfully. Copy the new password below and sign in.',
     email: user.email,

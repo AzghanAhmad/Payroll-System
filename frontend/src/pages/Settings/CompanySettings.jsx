@@ -5,7 +5,7 @@ import { CURRENCIES } from '@/utils/currencies';
 import { useSettingsForm } from './useSettingsForm';
 
 const FIELDS = [
-  'companyName', 'companyAddress', 'companyPhone', 'companyEmail',
+  'companyName', 'companyAddress', 'companyPhone', 'companyEmail', 'taxIdentificationNumber',
   'currency', 'digitalSignature',
 ];
 
@@ -30,6 +30,11 @@ export default function CompanySettings() {
           <Input label="Email" value={form.companyEmail || ''} onChange={(e) => set('companyEmail', e.target.value)} />
           <Input label="Phone" value={form.companyPhone || ''} onChange={(e) => set('companyPhone', e.target.value)} />
           <Input label="Address" value={form.companyAddress || ''} onChange={(e) => set('companyAddress', e.target.value)} />
+          <Input
+            label="Tax Identification Number"
+            value={form.taxIdentificationNumber || ''}
+            onChange={(e) => set('taxIdentificationNumber', e.target.value)}
+          />
           <Select label="Currency" value={form.currency || 'USD'} onChange={(e) => set('currency', e.target.value)}>
             {CURRENCIES.map((c) => (
               <option key={c.code} value={c.code}>

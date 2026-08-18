@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Download, Printer, Eye, FileStack, Trash2 } from 'lucide-react';
@@ -15,6 +16,8 @@ import { formatFullDate, getWeekPeriod } from '@/utils/weekPeriod';
 export default function PayslipsPage() {
   const now = new Date();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const employeeFilterId = searchParams.get('employee') || '';
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [week, setWeek] = useState(1);
@@ -52,15 +55,20 @@ export default function PayslipsPage() {
     );
   }, [rawPayslips]);
 
+  const visiblePayslips = useMemo(() => {
+    if (!employeeFilterId) return payslips;
+    return payslips.filter((p) => String(p.employee?._id || p.employee) === String(employeeFilterId));
+  }, [payslips, employeeFilterId]);
+
   const weekTotals = useMemo(() => {
-    const gross = payslips.reduce((s, p) => s + (p.grossPay || 0), 0);
-    const net = payslips.reduce((s, p) => s + (p.netPay || 0), 0);
+    const gross = visiblePayslips.reduce((s, p) => s + (p.grossPay || 0), 0);
+    const net = visiblePayslips.reduce((s, p) => s + (p.netPay || 0), 0);
     return {
       gross: Math.round(gross * 100) / 100,
       net: Math.round(net * 100) / 100,
-      count: payslips.length,
+      count: visiblePayslips.length,
     };
-  }, [payslips]);
+  }, [visiblePayslips]);
 
   const generateMut = useMutation({
     mutationFn: async () => {
@@ -116,11 +124,11 @@ export default function PayslipsPage() {
   };
 
   const handleDeletePeriod = () => {
-    if (!payslips.length) return;
+      if (!visiblePayslips.length) return;
     const msg =
       periodType === 'weekly'
-        ? `Delete all ${payslips.length} payslip(s) for Week ${week}, ${MONTHS[month - 1]} ${year}?`
-        : `Delete all ${payslips.length} monthly payslip(s) for ${MONTHS[month - 1]} ${year}?`;
+        ? `Delete all ${visiblePayslips.length} payslip(s) for Week ${week}, ${MONTHS[month - 1]} ${year}?`
+        : `Delete all ${visiblePayslips.length} monthly payslip(s) for ${MONTHS[month - 1]} ${year}?`;
     if (!window.confirm(msg)) return;
     deletePeriodMut.mutate();
   };
@@ -130,7 +138,7 @@ export default function PayslipsPage() {
       const payslip =
         typeof payslipOrId === 'object'
           ? payslipOrId
-          : payslips.find((p) => p._id === payslipOrId);
+          : visiblePayslips.find((p) => p._id === payslipOrId) || payslips.find((p) => p._id === payslipOrId);
       const id = typeof payslipOrId === 'object' ? payslipOrId._id : payslipOrId;
       const res = await payslipApi.download(id);
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
@@ -187,7 +195,7 @@ export default function PayslipsPage() {
       a.download = zipName;
       a.click();
       window.URL.revokeObjectURL(url);
-      toast.success(`Downloaded ${payslips.length} payslip(s) as ${zipName}`);
+      toast.success(`Downloaded ${visiblePayslips.length} payslip(s) as ${zipName}`);
     } catch (err) {
       toast.error(err.response?.data?.message || err.message || 'Download failed');
     }
@@ -262,22 +270,31 @@ export default function PayslipsPage() {
               >
                 <FileStack size={16} /> Save All Payslips
               </Button>
-              <Button type="button" variant="outline" disabled={!payslips.length} onClick={downloadAll}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!visiblePayslips.length || !!employeeFilterId}
+                onClick={downloadAll}
+                title={employeeFilterId ? 'Bulk download is disabled while filtering one employee' : undefined}
+              >
                 <Download size={16} /> Download PDFs
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 className="text-red-600 border-red-200 hover:bg-red-50"
-                disabled={!payslips.length || deletePeriodMut.isPending}
+                disabled={!visiblePayslips.length || deletePeriodMut.isPending || !!employeeFilterId}
                 onClick={handleDeletePeriod}
+                title={employeeFilterId ? 'Period delete is disabled while filtering one employee' : undefined}
               >
                 <Trash2 size={16} /> Delete Period
               </Button>
             </div>
           </div>
           <p className="text-xs text-muted">
-            Showing each employee once for the selected period. Change Month / Period / Week to switch payslips.
+            {employeeFilterId
+              ? 'Showing the selected employee for this period. Clear the search to use bulk download or period delete.'
+              : 'Showing each employee once for the selected period. Change Month / Period / Week to switch payslips.'}
           </p>
         </Card>
 
@@ -322,14 +339,14 @@ export default function PayslipsPage() {
                 </thead>
                 <tbody>
                   {isLoading && <tr><td className="px-4 py-6" colSpan={14}>Loading…</td></tr>}
-                  {!isLoading && !payslips.length && (
+                  {!isLoading && !visiblePayslips.length && (
                     <tr>
                       <td className="px-4 py-6 text-muted" colSpan={14}>
                         No payslips for this period. Click Save All Payslips after selecting Month and Week.
                       </td>
                     </tr>
                   )}
-                  {payslips.map((p) => (
+                  {visiblePayslips.map((p) => (
                     <tr key={p._id} className="border-b border-border/60 hover:bg-slate-50/70">
                       <td className="px-3 py-2 font-medium whitespace-nowrap">
                         <div>{p.employee?.fullName}</div>
@@ -378,7 +395,7 @@ export default function PayslipsPage() {
                       </td>
                     </tr>
                   ))}
-                  {payslips.length > 0 && (
+                  {visiblePayslips.length > 0 && (
                     <tr className="bg-blue-50 font-semibold">
                       <td className="px-3 py-3" colSpan={6}>
                         {periodType === 'weekly' ? `WEEK ${week} TOTAL` : 'MONTH TOTAL'}
@@ -395,7 +412,7 @@ export default function PayslipsPage() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {payslips.map((p) => (
+            {visiblePayslips.map((p) => (
               <StaffPayslipCard
                 key={p._id}
                 payslip={p}
@@ -405,7 +422,7 @@ export default function PayslipsPage() {
                 onDelete={() => handleDelete(p)}
               />
             ))}
-            {!payslips.length && (
+            {!visiblePayslips.length && (
               <Card><p className="text-muted text-sm">No payslips for this period.</p></Card>
             )}
           </div>

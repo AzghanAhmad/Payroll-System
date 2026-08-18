@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import AppLayout from '@/layouts/AppLayout';
@@ -47,6 +48,8 @@ const EMP_W = 150;
 const FIELD_W = 56;
 
 export default function TimesheetsPage() {
+  const [searchParams] = useSearchParams();
+  const employeeFilterId = searchParams.get('employee') || '';
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -199,6 +202,11 @@ export default function TimesheetsPage() {
     () => localWeeks.find((w) => Number(w.weekNumber) === Number(week)),
     [localWeeks, week]
   );
+  const visibleEntries = useMemo(() => {
+    const entries = (currentWeek?.entries || []).map((entry, index) => ({ entry, index }));
+    if (!employeeFilterId) return entries;
+    return entries.filter(({ entry }) => String(entry.employee?._id || entry.employee) === String(employeeFilterId));
+  }, [currentWeek, employeeFilterId]);
   const period = getWeekPeriod(year, month, week);
 
   const { data: calendarEvents } = useQuery({
@@ -285,11 +293,12 @@ export default function TimesheetsPage() {
   };
 
   const costingRows = useMemo(() => {
-    return (currentWeek?.entries || []).map((entry) => ({
+    return visibleEntries.map(({ entry, index }) => ({
+      index,
       entry,
       cost: calcWeekCosting(entry, settings || {}),
     }));
-  }, [currentWeek, settings]);
+  }, [visibleEntries, settings]);
 
   const weekTotals = useMemo(() => {
     const t = {
@@ -454,7 +463,7 @@ export default function TimesheetsPage() {
                 {isLoading && (
                   <tr><td className="px-4 py-6 text-muted" colSpan={11}>Loading…</td></tr>
                 )}
-                {(currentWeek?.entries || []).map((entry, idx) =>
+                {visibleEntries.map(({ entry, index: entryIdx }) =>
                   FIELD_ROWS.map((field, fieldIdx) => {
                     const isFirst = fieldIdx === 0;
                     const isLast = fieldIdx === FIELD_ROWS.length - 1;
@@ -494,7 +503,7 @@ export default function TimesheetsPage() {
                                   value={hol ? '' : (day[field.key] || '')}
                                   disabled={hol}
                                   title={hol ? 'Public holiday — hours locked' : undefined}
-                                  onChange={(e) => updateDayField(idx, d.key, field.key, e.target.value)}
+                                  onChange={(e) => updateDayField(entryIdx, d.key, field.key, e.target.value)}
                                 />
                               )}
                               {field.type === 'number' && (
@@ -506,7 +515,7 @@ export default function TimesheetsPage() {
                                   value={hol ? 0 : (day.breakHours ?? 0)}
                                   disabled={hol}
                                   title={hol ? 'Public holiday — hours locked' : undefined}
-                                  onChange={(e) => updateDayField(idx, d.key, 'breakHours', Number(e.target.value))}
+                                  onChange={(e) => updateDayField(entryIdx, d.key, 'breakHours', Number(e.target.value))}
                                 />
                               )}
                               {field.type === 'display' && (
@@ -562,8 +571,8 @@ export default function TimesheetsPage() {
                 </tr>
               </thead>
               <tbody>
-                {costingRows.map(({ entry, cost }, idx) => (
-                  <tr key={entry.employee?._id || idx} className="border-b border-violet-100">
+                {costingRows.map(({ entry, cost, index }) => (
+                  <tr key={entry.employee?._id || index} className="border-b border-violet-100">
                     <td className="px-3 py-2 font-medium whitespace-nowrap bg-white">{entry.employee?.fullName}</td>
                     <td className="px-2 py-2 text-right bg-sky-50 text-sky-800">{formatNumber(cost.totalHours)}</td>
                     <td className="px-2 py-2 text-right bg-emerald-50 text-emerald-800">{formatNumber(cost.normalHours)}</td>
@@ -583,7 +592,7 @@ export default function TimesheetsPage() {
                         className="w-full rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs focus:border-violet-400 focus:ring-2 focus:ring-violet-200 outline-none"
                         placeholder="Notes…"
                         value={entry.weeklyNotes || ''}
-                        onChange={(e) => updateNotes(idx, e.target.value)}
+                        onChange={(e) => updateNotes(index, e.target.value)}
                       />
                     </td>
                   </tr>

@@ -100,27 +100,32 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
 
   const paye = rows.map((r, idx) => {
     const w = r.weeks;
-    const total12 = round2(w[1].gross + w[2].gross);
-    const total34 = round2(w[3].gross + w[4].gross);
-    const total5 = round2(w[5].gross);
-    const totalTax = round2(
-      w[1].tax + w[2].tax + w[3].tax + w[4].tax + w[5].tax
-    );
-    const grandTotal = round2(total12 + total34 + total5);
+    const payPeriod1 = round2(w[1].gross + w[2].gross);
+    const payPeriod2 = round2(w[3].gross + w[4].gross);
+    const payPeriod3 = round2(w[5].gross);
+    const taxPeriod1 = round2(w[1].tax + w[2].tax);
+    const taxPeriod2 = round2(w[3].tax + w[4].tax);
+    const taxPeriod3 = round2(w[5].tax);
+    const totalTax = round2(taxPeriod1 + taxPeriod2 + taxPeriod3);
+    const grossTotal = round2(payPeriod1 + payPeriod2 + payPeriod3);
+    const npfTotal = round2(w[1].empNpf + w[2].empNpf + w[3].empNpf + w[4].empNpf + w[5].empNpf);
+    const accTotal = round2(w[1].empAcc + w[2].empAcc + w[3].empAcc + w[4].empAcc + w[5].empAcc);
     return {
       row: idx + 1,
       employeeId: r.employeeId,
       name: r.fullName || '0',
-      week1: w[1].gross,
-      week2: w[2].gross,
-      total12,
-      week3: w[3].gross,
-      week4: w[4].gross,
-      total34,
-      week5: w[5].gross,
-      total5,
+      npfNumber: r.npfNumber || '',
+      payPeriod: 'Fortnightly',
+      payPeriod1,
+      payPeriod2,
+      payPeriod3,
+      grossTotal,
+      taxPeriod1,
+      taxPeriod2,
+      taxPeriod3,
       totalTax,
-      grandTotal,
+      npfTotal,
+      accTotal,
     };
   });
 
@@ -160,7 +165,7 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
 
   const sumField = (list, pick) => round2(list.reduce((s, r) => s + pick(r), 0));
 
-  const payeTotal = sumField(paye, (r) => r.grandTotal);
+  const payeTotal = sumField(paye, (r) => r.grossTotal);
   const payeTaxTotal = sumField(paye, (r) => r.totalTax);
   const npfTotal = sumField(npf, (r) => r.total);
   const accTotal = sumField(acc, (r) => r.total);
@@ -198,10 +203,16 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
   applyOverride('acc', acc, (r) => String(r.row || r.name));
 
   for (const r of paye) {
-    r.total12 = round2((Number(r.week1) || 0) + (Number(r.week2) || 0));
-    r.total34 = round2((Number(r.week3) || 0) + (Number(r.week4) || 0));
-    r.total5 = round2(Number(r.week5) || 0);
-    r.grandTotal = round2(r.total12 + r.total34 + r.total5);
+    r.payPeriod1 = round2(Number(r.payPeriod1) || 0);
+    r.payPeriod2 = round2(Number(r.payPeriod2) || 0);
+    r.payPeriod3 = round2(Number(r.payPeriod3) || 0);
+    r.taxPeriod1 = round2(Number(r.taxPeriod1) || 0);
+    r.taxPeriod2 = round2(Number(r.taxPeriod2) || 0);
+    r.taxPeriod3 = round2(Number(r.taxPeriod3) || 0);
+    r.grossTotal = round2(r.payPeriod1 + r.payPeriod2 + r.payPeriod3);
+    r.totalTax = round2(r.taxPeriod1 + r.taxPeriod2 + r.taxPeriod3);
+    r.npfTotal = round2(Number(r.npfTotal) || 0);
+    r.accTotal = round2(Number(r.accTotal) || 0);
   }
   for (const r of npf) {
     r.total = round2((r.weeks || []).reduce((s, x) => s + (Number(x.employee) || 0) + (Number(x.employer) || 0), 0));
@@ -212,10 +223,19 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
 
   // Recompute totals after overrides
   const sumField2 = (list, pick) => round2(list.reduce((s, r) => s + pick(r), 0));
-  const payeTotal2 = sumField2(paye, (r) => Number(r.grandTotal) || 0);
+  const payeTotal2 = sumField2(paye, (r) => Number(r.grossTotal) || 0);
   const payeTaxTotal2 = sumField2(paye, (r) => Number(r.totalTax) || 0);
   const npfTotal2 = sumField2(npf, (r) => Number(r.total) || 0);
   const accTotal2 = sumField2(acc, (r) => Number(r.total) || 0);
+
+  const ytdPayslips = await Payslip.find({
+    type: 'weekly',
+    year,
+    month: { $lte: month },
+  }).select('grossPay tax');
+  const ytdGross = round2(ytdPayslips.reduce((s, p) => s + Number(p.grossPay || 0), 0));
+  const ytdTax = round2(ytdPayslips.reduce((s, p) => s + Number(p.tax || 0), 0));
+  const previousGross = round2(ytdGross - payeTotal2);
 
   res.json({
     year,
@@ -225,6 +245,8 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
       companyAddress: settings.companyAddress || '',
       companyPhone: settings.companyPhone || '',
       companyEmail: settings.companyEmail || '',
+      taxIdentificationNumber: settings.taxIdentificationNumber || '',
+      digitalSignature: settings.digitalSignature || '',
       npfEmployerNumber: settings.npfEmployerNumber || '',
       npfZone: settings.npfZone || '',
       accEmpNumber1: settings.accEmpNumber1 || '',
@@ -239,6 +261,14 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     paye: {
       rows: paye,
       totals: { gross: payeTotal2, tax: payeTaxTotal2 },
+      summary: {
+        previousGross,
+        thisMonthGross: payeTotal2,
+        yearToDateGross: ytdGross,
+        taxPaidThisMonth: payeTaxTotal2,
+        totalTaxToPay: payeTaxTotal2,
+        yearToDateTax: ytdTax,
+      },
     },
     npf: {
       rows: npf,

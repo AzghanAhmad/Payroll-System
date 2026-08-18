@@ -15,6 +15,7 @@ const settingsSchema = new mongoose.Schema(
     companyAddress: { type: String, default: '' },
     companyPhone: { type: String, default: '' },
     companyEmail: { type: String, default: '' },
+    taxIdentificationNumber: { type: String, default: '' },
     logo: { type: String, default: '' },
     currency: { type: String, default: 'USD' },
     weekStart: { type: String, default: 'friday' },

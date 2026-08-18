@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   useReactTable,
@@ -62,7 +63,8 @@ function useDebouncedValue(value, delay = 300) {
 
 export default function EmployeesPage() {
   const qc = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get('search') || '');
   const debouncedSearch = useDebouncedValue(search, 300);
   const [status, setStatus] = useState('');
   const [department, setDepartment] = useState('');
@@ -73,6 +75,10 @@ export default function EmployeesPage() {
   const [photo, setPhoto] = useState(null);
   const [exporting, setExporting] = useState(false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    setSearch(searchParams.get('search') || '');
+  }, [searchParams]);
 
   const { data: departments = [] } = useQuery({
     queryKey: ['departments'],

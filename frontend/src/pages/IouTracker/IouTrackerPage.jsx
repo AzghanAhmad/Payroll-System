@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, Loader2, Check } from 'lucide-react';
@@ -48,6 +49,8 @@ function useDebouncedCallback(fn, delay) {
 export default function IouTrackerPage() {
   const now = new Date();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const employeeFilterId = searchParams.get('employee') || '';
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [viewWeek, setViewWeek] = useState(1);
@@ -200,13 +203,20 @@ export default function IouTrackerPage() {
     }
   };
 
-  const staffRows = useMemo(() => data?.staff || [], [data]);
+  const staffRows = useMemo(() => {
+    const rows = data?.staff || [];
+    if (!employeeFilterId) return rows;
+    return rows.filter((row) => String(row.employeeId) === String(employeeFilterId));
+  }, [data, employeeFilterId]);
   const staffWithIou = useMemo(
     () => staffRows.filter((r) => r.loanId && Number(r.iouAmount) > 0),
     [staffRows]
   );
 
-  const employeesWithoutActive = useMemo(() => empList, [empList]);
+  const employeesWithoutActive = useMemo(() => {
+    if (!employeeFilterId) return empList;
+    return empList.filter((e) => String(e._id) === String(employeeFilterId));
+  }, [empList, employeeFilterId]);
   const onAdd = (e) => {
     e.preventDefault();
     if (!form.employee || !form.amount) {
@@ -309,12 +319,12 @@ export default function IouTrackerPage() {
                     <td className="px-4 py-6 text-muted" colSpan={17}>Loading…</td>
                   </tr>
                 )}
-                {!isLoading && (data?.staff || []).length === 0 && (
+                {!isLoading && staffRows.length === 0 && (
                   <tr>
                     <td className="px-4 py-6 text-muted" colSpan={17}>No staff found.</td>
                   </tr>
                 )}
-                {(data?.staff || []).map((row) => {
+                {staffRows.map((row) => {
                   const rowKey = String(row.employeeId);
                   return (
                     <TrackerRow

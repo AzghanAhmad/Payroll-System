@@ -1,4 +1,6 @@
 import { useMemo, useState, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import AppLayout from '@/layouts/AppLayout';
@@ -37,10 +39,17 @@ const toInputDate = (d) => {
 
 export default function LeavePage() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState('dashboard');
+  const [searchParams] = useSearchParams();
+  const employeeFilterId = searchParams.get('employee') || '';
+  const employeeFilterName = (searchParams.get('search') || '').trim().toLowerCase();
+  const [tab, setTab] = useState(searchParams.get('tab') || 'dashboard');
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
+
+  useEffect(() => {
+    setTab(searchParams.get('tab') || 'dashboard');
+  }, [searchParams]);
 
   const { data: dash, isLoading } = useQuery({
     queryKey: ['leave-dashboard', asOf],
@@ -56,6 +65,14 @@ export default function LeavePage() {
   });
 
   const empList = empData?.items || [];
+  const filteredEmpList = useMemo(() => {
+    if (!employeeFilterId && !employeeFilterName) return empList;
+    return empList.filter((e) => {
+      const idMatch = employeeFilterId && String(e._id) === String(employeeFilterId);
+      const nameMatch = employeeFilterName && String(e.fullName || '').toLowerCase().includes(employeeFilterName);
+      return idMatch || nameMatch;
+    });
+  }, [empList, employeeFilterId, employeeFilterName]);
 
   const invalidateLeave = () => {
     qc.invalidateQueries({ queryKey: ['leave-dashboard'] });
@@ -127,6 +144,37 @@ export default function LeavePage() {
     }));
   }, [dash, labels]);
 
+  const filteredStaff = useMemo(() => {
+    const rows = dash?.staff || [];
+    if (!employeeFilterId && !employeeFilterName) return rows;
+    return rows.filter((row) => {
+      const idMatch = employeeFilterId && String(row.employeeId) === String(employeeFilterId);
+      const nameMatch = employeeFilterName && String(row.staffName || '').toLowerCase().includes(employeeFilterName);
+      return idMatch || nameMatch;
+    });
+  }, [dash, employeeFilterId, employeeFilterName]);
+
+  const filteredEntries = useMemo(() => {
+    if (!employeeFilterId && !employeeFilterName) return entries;
+    return entries.filter((entry) => {
+      const idMatch = employeeFilterId && String(entry.employee?._id || entry.employee) === String(employeeFilterId);
+      const nameMatch =
+        employeeFilterName && String(entry.employee?.fullName || '').toLowerCase().includes(employeeFilterName);
+      return idMatch || nameMatch;
+    });
+  }, [entries, employeeFilterId, employeeFilterName]);
+
+  const filteredSheets = useMemo(() => {
+    const sheets = sheetsData?.sheets || [];
+    if (!employeeFilterId && !employeeFilterName) return sheets;
+    return sheets.filter((sheet) => {
+      const idMatch = employeeFilterId && String(sheet.employeeId) === String(employeeFilterId);
+      const nameMatch =
+        employeeFilterName && String(sheet.employeeName || '').toLowerCase().includes(employeeFilterName);
+      return idMatch || nameMatch;
+    });
+  }, [sheetsData, employeeFilterId, employeeFilterName]);
+
   return (
     <AppLayout title="Leave Tracker">
       <div className="space-y-4">
@@ -196,7 +244,7 @@ export default function LeavePage() {
                     {isLoading && (
                       <tr><td className="px-4 py-6 text-muted" colSpan={23}>Loading…</td></tr>
                     )}
-                    {(dash?.staff || []).map((row) => {
+                    {filteredStaff.map((row) => {
                       const balanceText = [
                         `Leave balance — ${row.staffName}`,
                         `As of ${asOf}`,
@@ -286,7 +334,7 @@ export default function LeavePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <Select label="Staff Name" value={form.employee} onChange={(e) => setForm({ ...form, employee: e.target.value })}>
                   <option value="">Select…</option>
-                  {empList.map((e) => (
+                  {filteredEmpList.map((e) => (
                     <option key={e._id} value={e._id}>{e.fullName}</option>
                   ))}
                 </Select>
@@ -340,9 +388,9 @@ export default function LeavePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {entries.map((e, i) => (
+                    {filteredEntries.map((e, i) => (
                       <tr key={e._id} className={`border-b border-border/50 ${editingId === e._id ? 'bg-sky-50/80' : ''}`}>
-                        <td className="px-2 py-2">{entries.length - i}</td>
+                        <td className="px-2 py-2">{filteredEntries.length - i}</td>
                         <td className="px-2 py-2 whitespace-nowrap">{e.employee?.fullName}</td>
                         <td className="px-2 py-2">{labels[e.leaveType] || e.leaveType}</td>
                         <td className="px-2 py-2 whitespace-nowrap">{fmtDate(e.startDate)}</td>
@@ -365,7 +413,7 @@ export default function LeavePage() {
                         </td>
                       </tr>
                     ))}
-                    {!entries.length && (
+                    {!filteredEntries.length && (
                       <tr><td colSpan={12} className="px-4 py-6 text-muted">No leave entries yet.</td></tr>
                     )}
                   </tbody>
@@ -388,7 +436,7 @@ export default function LeavePage() {
             </Card>
 
             <div className="grid grid-cols-1 gap-4">
-              {(sheetsData?.sheets || []).map((sheet) => (
+              {filteredSheets.map((sheet) => (
                 <Card key={sheet.employeeId} className="space-y-3 border-l-4 border-l-emerald-400 max-w-4xl">
                   <div>
                     <h4 className="font-heading text-base uppercase tracking-wide">
