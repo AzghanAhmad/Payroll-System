@@ -10,6 +10,7 @@ import {
   DEFAULT_LEAVE_ENTITLEMENTS,
   startOfDay,
 } from '../services/leaveService.js';
+import { streamLeaveBalancePdf } from '../services/leaveBalancePdf.js';
 
 const getSettings = async () => {
   let s = await Settings.findOne();
@@ -43,6 +44,46 @@ const computeDays = async (startDate, endDate, overrideDays) => {
   return { calculatedWorkdays: calculated, daysCounted: round2(daysCounted) };
 };
 
+const buildStaffBalanceRow = (emp, entries, entitlements, asOf) => {
+  const cycle = getLeaveCycle(emp.hireDate, asOf);
+  const row = {
+    employeeId: emp._id,
+    staffName: emp.fullName,
+    email: emp.email || '',
+    hireDate: emp.hireDate || null,
+    currentLeaveCycle: cycle.currentCycleStart,
+    nextAnniversary: cycle.nextAnniversary,
+    daysToReset: cycle.daysToReset,
+    status: cycle.status,
+    types: {},
+    totalLeaveLeft: 0,
+  };
+
+  for (const type of LEAVE_TYPES) {
+    const ent = entitlements[type] || 0;
+    let used = 0;
+    if (cycle.currentCycleStart) {
+      for (const e of entries) {
+        if (String(e.employee) !== String(emp._id)) continue;
+        if (e.leaveType !== type) continue;
+        const start = startOfDay(e.startDate);
+        if (start >= cycle.currentCycleStart && start < cycle.nextAnniversary) {
+          used += Number(e.daysCounted) || 0;
+        }
+      }
+    }
+    used = round2(used);
+    const left = cycle.hireDate ? round2(Math.max(0, ent - used)) : 0;
+    row.types[type] = {
+      entitlement: cycle.hireDate ? ent : 0,
+      used: cycle.hireDate ? used : 0,
+      left,
+    };
+    row.totalLeaveLeft = round2(row.totalLeaveLeft + left);
+  }
+  return row;
+};
+
 export const getLeaveEntitlements = asyncHandler(async (req, res) => {
   const settings = await getSettings();
   res.json({
@@ -65,45 +106,7 @@ export const getLeaveDashboard = asyncHandler(async (req, res) => {
     'employee leaveType startDate endDate daysCounted'
   );
 
-  const staff = employees.map((emp) => {
-    const cycle = getLeaveCycle(emp.hireDate, asOf);
-    const row = {
-      employeeId: emp._id,
-      staffName: emp.fullName,
-      email: emp.email || '',
-      hireDate: emp.hireDate || null,
-      currentLeaveCycle: cycle.currentCycleStart,
-      nextAnniversary: cycle.nextAnniversary,
-      daysToReset: cycle.daysToReset,
-      status: cycle.status,
-      types: {},
-      totalLeaveLeft: 0,
-    };
-
-    for (const type of LEAVE_TYPES) {
-      const ent = entitlements[type] || 0;
-      let used = 0;
-      if (cycle.currentCycleStart) {
-        for (const e of entries) {
-          if (String(e.employee) !== String(emp._id)) continue;
-          if (e.leaveType !== type) continue;
-          const start = startOfDay(e.startDate);
-          if (start >= cycle.currentCycleStart && start < cycle.nextAnniversary) {
-            used += Number(e.daysCounted) || 0;
-          }
-        }
-      }
-      used = round2(used);
-      const left = cycle.hireDate ? round2(Math.max(0, ent - used)) : 0;
-      row.types[type] = {
-        entitlement: cycle.hireDate ? ent : 0,
-        used: cycle.hireDate ? used : 0,
-        left,
-      };
-      row.totalLeaveLeft = round2(row.totalLeaveLeft + left);
-    }
-    return row;
-  });
+  const staff = employees.map((emp) => buildStaffBalanceRow(emp, entries, entitlements, asOf));
 
   const totals = {};
   for (const type of LEAVE_TYPES) {
@@ -352,5 +355,30 @@ export const emailLeaveBalance = asyncHandler(async (req, res) => {
     message: result?.skipped ? 'Email skipped (SMTP not configured) — use Share / mailto instead' : 'Leave balance emailed',
     skipped: Boolean(result?.skipped),
     to,
+  });
+});
+
+/** Download one staff member's leave balance as PDF */
+export const downloadLeaveBalance = asyncHandler(async (req, res) => {
+  const { employeeId, asOf: asOfStr } = req.query;
+  if (!employeeId) throw new AppError('employeeId required');
+
+  const emp = await Employee.findById(employeeId).select('fullName employeeId hireDate status email');
+  if (!emp) throw new AppError('Employee not found', 404);
+
+  const asOf = asOfStr ? new Date(asOfStr) : new Date();
+  const settings = await getSettings();
+  const entitlements = getEntitlements(settings);
+  const entries = await LeaveEntry.find({ status: 'Approved' }).select(
+    'employee leaveType startDate endDate daysCounted'
+  );
+
+  const row = buildStaffBalanceRow(emp, entries, entitlements, asOf);
+
+  streamLeaveBalancePdf(res, {
+    companyName: settings.companyName || 'Payroll',
+    row,
+    asOf,
+    labels: LEAVE_TYPE_LABELS,
   });
 });

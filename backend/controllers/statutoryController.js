@@ -13,6 +13,33 @@ const getSettings = async () => {
   return s;
 };
 
+/** Map department names to Café / Chemist buckets for ACC filing */
+const normalizeAccDept = (name) => {
+  const n = String(name || '').toLowerCase();
+  if (/caf[eé]/.test(n)) return 'Café';
+  if (/chemist/.test(n)) return 'Chemist';
+  return String(name || 'Other');
+};
+
+const recalcPayeStatutory = (row, syncBaseFromGross = true) => {
+  row.payPeriod1 = round2(Number(row.payPeriod1) || 0);
+  row.payPeriod2 = round2(Number(row.payPeriod2) || 0);
+  row.payPeriod3 = round2(Number(row.payPeriod3) || 0);
+  row.taxPeriod1 = round2(Number(row.taxPeriod1) || 0);
+  row.taxPeriod2 = round2(Number(row.taxPeriod2) || 0);
+  row.taxPeriod3 = round2(Number(row.taxPeriod3) || 0);
+  row.grossTotal = round2(row.payPeriod1 + row.payPeriod2 + row.payPeriod3);
+  row.totalTax = round2(row.taxPeriod1 + row.taxPeriod2 + row.taxPeriod3);
+  if (syncBaseFromGross) {
+    row.baseAmount = row.grossTotal;
+  } else {
+    row.baseAmount = round2(Number(row.baseAmount) || row.grossTotal);
+  }
+  row.npfTotal = round2(row.baseAmount * 0.09);
+  row.accTotal = round2(row.baseAmount * 0.01);
+  return row;
+};
+
 const buildEmployeeWeekMap = async (year, month) => {
   const payrolls = await Payroll.find({ type: 'weekly', year, month }).sort({ week: 1 });
   const byEmp = new Map();
@@ -108,8 +135,9 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     const taxPeriod3 = round2(w[5].tax);
     const totalTax = round2(taxPeriod1 + taxPeriod2 + taxPeriod3);
     const grossTotal = round2(payPeriod1 + payPeriod2 + payPeriod3);
-    const npfTotal = round2(w[1].empNpf + w[2].empNpf + w[3].empNpf + w[4].empNpf + w[5].empNpf);
-    const accTotal = round2(w[1].empAcc + w[2].empAcc + w[3].empAcc + w[4].empAcc + w[5].empAcc);
+    const baseAmount = grossTotal;
+    const npfTotal = round2(baseAmount * 0.09);
+    const accTotal = round2(baseAmount * 0.01);
     return {
       row: idx + 1,
       employeeId: r.employeeId,
@@ -120,6 +148,7 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
       payPeriod2,
       payPeriod3,
       grossTotal,
+      baseAmount,
       taxPeriod1,
       taxPeriod2,
       taxPeriod3,
@@ -170,13 +199,6 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
   const npfTotal = sumField(npf, (r) => r.total);
   const accTotal = sumField(acc, (r) => r.total);
 
-  // Department ACC split (Café / Chemist style)
-  const accByDept = {};
-  for (const r of acc) {
-    const dept = r.departmentName || 'Other';
-    accByDept[dept] = round2((accByDept[dept] || 0) + r.total);
-  }
-
   const periodStart = getWeekPeriod(year, month, 1).start;
   const lastWeek = Math.max(1, ...payrolls.map((p) => p.week || 1), 4);
   const periodEnd = getWeekPeriod(year, month, Math.min(5, lastWeek)).end;
@@ -203,16 +225,11 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
   applyOverride('acc', acc, (r) => String(r.row || r.name));
 
   for (const r of paye) {
-    r.payPeriod1 = round2(Number(r.payPeriod1) || 0);
-    r.payPeriod2 = round2(Number(r.payPeriod2) || 0);
-    r.payPeriod3 = round2(Number(r.payPeriod3) || 0);
-    r.taxPeriod1 = round2(Number(r.taxPeriod1) || 0);
-    r.taxPeriod2 = round2(Number(r.taxPeriod2) || 0);
-    r.taxPeriod3 = round2(Number(r.taxPeriod3) || 0);
-    r.grossTotal = round2(r.payPeriod1 + r.payPeriod2 + r.payPeriod3);
-    r.totalTax = round2(r.taxPeriod1 + r.taxPeriod2 + r.taxPeriod3);
-    r.npfTotal = round2(Number(r.npfTotal) || 0);
-    r.accTotal = round2(Number(r.accTotal) || 0);
+    const empKey = String(r.employeeId || r.row);
+    const hasBaseOverride = overrides.some(
+      (o) => o.sheet === 'paye' && o.rowKey === empKey && o.field === 'baseAmount'
+    );
+    recalcPayeStatutory(r, !hasBaseOverride);
   }
   for (const r of npf) {
     r.total = round2((r.weeks || []).reduce((s, x) => s + (Number(x.employee) || 0) + (Number(x.employer) || 0), 0));
@@ -221,10 +238,20 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     r.total = round2((r.weeks || []).reduce((s, x) => s + (Number(x.employee) || 0) + (Number(x.employer) || 0), 0));
   }
 
+  const accByDept = {};
+  for (const r of acc) {
+    const dept = normalizeAccDept(r.departmentName);
+    accByDept[dept] = round2((accByDept[dept] || 0) + r.total);
+  }
+  const accCafeTotal = accByDept['Café'] || 0;
+  const accChemistTotal = accByDept.Chemist || 0;
+
   // Recompute totals after overrides
   const sumField2 = (list, pick) => round2(list.reduce((s, r) => s + pick(r), 0));
   const payeTotal2 = sumField2(paye, (r) => Number(r.grossTotal) || 0);
   const payeTaxTotal2 = sumField2(paye, (r) => Number(r.totalTax) || 0);
+  const payeNpfTotal2 = sumField2(paye, (r) => Number(r.npfTotal) || 0);
+  const payeAccTotal2 = sumField2(paye, (r) => Number(r.accTotal) || 0);
   const npfTotal2 = sumField2(npf, (r) => Number(r.total) || 0);
   const accTotal2 = sumField2(acc, (r) => Number(r.total) || 0);
 
@@ -237,21 +264,56 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
   const ytdTax = round2(ytdPayslips.reduce((s, p) => s + Number(p.tax || 0), 0));
   const previousGross = round2(ytdGross - payeTotal2);
 
+  const employer = {
+    companyName: settings.companyName || '',
+    companyAddress: settings.companyAddress || '',
+    companyPhone: settings.companyPhone || '',
+    companyEmail: settings.companyEmail || '',
+    taxIdentificationNumber: settings.taxIdentificationNumber || '',
+    digitalSignature: settings.digitalSignature || '',
+    npfEmployerNumber: settings.npfEmployerNumber || '',
+    npfZone: settings.npfZone || '',
+    accEmpNumber1: settings.accEmpNumber1 || '',
+    accEmpNumber2: settings.accEmpNumber2 || '',
+  };
+
+  const payeSummary = {
+    previousGross,
+    thisMonthGross: payeTotal2,
+    yearToDateGross: ytdGross,
+    taxPaidThisMonth: payeTaxTotal2,
+    totalTaxToPay: payeTaxTotal2,
+    yearToDateTax: ytdTax,
+    designation: settings.companyEmail || settings.companyPhone || '',
+  };
+
+  const statutoryTotals = {
+    paye: payeTaxTotal2,
+    npf: npfTotal2,
+    acc: accTotal2,
+    total: round2(payeTaxTotal2 + npfTotal2 + accTotal2),
+    payeGross: payeTotal2,
+    payeNpf: payeNpfTotal2,
+    payeAcc: payeAccTotal2,
+  };
+
+  const applyMetaOverride = (target, o) => {
+    if (!(o.field in target)) return;
+    const val = o.value;
+    target[o.field] =
+      typeof target[o.field] === 'number' ? Number(val) || 0 : val;
+  };
+
+  for (const o of overrides.filter((x) => x.sheet === 'meta')) {
+    if (o.rowKey === '_employer') applyMetaOverride(employer, o);
+    else if (o.rowKey === '_paye_summary') applyMetaOverride(payeSummary, o);
+    else if (o.rowKey === '_statutory_totals') applyMetaOverride(statutoryTotals, o);
+  }
+
   res.json({
     year,
     month,
-    employer: {
-      companyName: settings.companyName || '',
-      companyAddress: settings.companyAddress || '',
-      companyPhone: settings.companyPhone || '',
-      companyEmail: settings.companyEmail || '',
-      taxIdentificationNumber: settings.taxIdentificationNumber || '',
-      digitalSignature: settings.digitalSignature || '',
-      npfEmployerNumber: settings.npfEmployerNumber || '',
-      npfZone: settings.npfZone || '',
-      accEmpNumber1: settings.accEmpNumber1 || '',
-      accEmpNumber2: settings.accEmpNumber2 || '',
-    },
+    employer,
     period: {
       start: periodStart,
       end: periodEnd,
@@ -260,15 +322,8 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     },
     paye: {
       rows: paye,
-      totals: { gross: payeTotal2, tax: payeTaxTotal2 },
-      summary: {
-        previousGross,
-        thisMonthGross: payeTotal2,
-        yearToDateGross: ytdGross,
-        taxPaidThisMonth: payeTaxTotal2,
-        totalTaxToPay: payeTaxTotal2,
-        yearToDateTax: ytdTax,
-      },
+      totals: { gross: payeTotal2, tax: payeTaxTotal2, npf: payeNpfTotal2, acc: payeAccTotal2 },
+      summary: payeSummary,
     },
     npf: {
       rows: npf,
@@ -280,14 +335,10 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
       rows: acc,
       total: accTotal2,
       byDepartment: accByDept,
+      cafeTotal: accCafeTotal,
+      chemistTotal: accChemistTotal,
     },
-    statutoryTotals: {
-      paye: payeTaxTotal2,
-      npf: npfTotal2,
-      acc: accTotal2,
-      total: round2(payeTaxTotal2 + npfTotal2 + accTotal2),
-      payeGross: payeTotal2,
-    },
+    statutoryTotals,
   });
 });
 

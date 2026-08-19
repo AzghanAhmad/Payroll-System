@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { Download } from 'lucide-react';
 import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -35,6 +36,29 @@ const toInputDate = (d) => {
   const x = new Date(d);
   if (Number.isNaN(x.getTime())) return '';
   return x.toISOString().slice(0, 10);
+};
+
+const leavePdfFilename = (staffName, asOf) => {
+  const name = String(staffName || 'Staff')
+    .replace(/[^\w\s'-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+  return `Leave_${name}_${String(asOf).slice(0, 10)}.pdf`;
+};
+
+const downloadLeaveBalance = async (row, asOf) => {
+  try {
+    const res = await leaveApi.downloadBalance({ employeeId: row.employeeId, asOf });
+    const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = leavePdfFilename(row.staffName, asOf);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success('Leave balance downloaded');
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Download failed');
+  }
 };
 
 export default function LeavePage() {
@@ -226,7 +250,7 @@ export default function LeavePage() {
                       ))}
                       <th className="px-2 py-2">Status</th>
                       <th className="px-2 py-2 text-right">Total Left</th>
-                      <th className="px-2 py-2 text-center">Share</th>
+                      <th className="px-2 py-2 text-center">Actions</th>
                     </tr>
                     <tr className="bg-slate-50 text-[10px] text-muted">
                       <th colSpan={5} />
@@ -278,18 +302,28 @@ export default function LeavePage() {
                         <td className="px-2 py-2 whitespace-nowrap">{row.status}</td>
                         <td className="px-2 py-2 text-right font-semibold">{formatNumber(row.totalLeaveLeft)}</td>
                         <td className="px-2 py-2 text-center">
-                          <ShareMenu
-                            title={`Leave balance — ${row.staffName}`}
-                            text={balanceText}
-                            emailLabel="Email to staff"
-                            onEmail={async () => {
-                              const res = await leaveApi.emailBalance({
-                                employeeId: row.employeeId,
-                                asOf,
-                              });
-                              toast.success(res.message || 'Sent');
-                            }}
-                          />
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+                              title="Download leave balance"
+                              onClick={() => downloadLeaveBalance(row, asOf)}
+                            >
+                              <Download size={15} />
+                            </button>
+                            <ShareMenu
+                              title={`Leave balance — ${row.staffName}`}
+                              text={balanceText}
+                              emailLabel="Email to staff"
+                              onEmail={async () => {
+                                const res = await leaveApi.emailBalance({
+                                  employeeId: row.employeeId,
+                                  asOf,
+                                });
+                                toast.success(res.message || 'Sent');
+                              }}
+                            />
+                          </div>
                         </td>
                       </tr>
                       );

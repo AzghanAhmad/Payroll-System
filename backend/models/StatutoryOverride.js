@@ -8,7 +8,7 @@ const statutoryOverrideSchema = new mongoose.Schema(
   {
     year: { type: Number, required: true },
     month: { type: Number, required: true, min: 1, max: 12 },
-    sheet: { type: String, enum: ['paye', 'npf', 'acc'], required: true },
+    sheet: { type: String, enum: ['paye', 'npf', 'acc', 'meta'], required: true },
     /** employee Mongo id or synthetic row key */
     rowKey: { type: String, required: true },
     week: { type: Number, min: 0, max: 5, default: 0 },

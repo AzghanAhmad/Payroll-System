@@ -8,6 +8,7 @@ router.use(protect);
 router.get('/dashboard', ctrl.getLeaveDashboard);
 router.get('/staff-sheets', ctrl.getStaffLeaveSheets);
 router.get('/entitlements', ctrl.getLeaveEntitlements);
+router.get('/download-balance', ctrl.downloadLeaveBalance);
 router.post('/email-balance', authorize('admin', 'manager', 'hr'), ctrl.emailLeaveBalance);
 router.get('/', ctrl.listLeaveEntries);
 router.post('/', authorize('admin', 'manager', 'hr'), ctrl.createLeaveEntry);

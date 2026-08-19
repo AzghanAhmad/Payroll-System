@@ -117,6 +117,8 @@ export const leaveApi = {
   update: (id, data) => api.put(`/leave/${id}`, data).then((r) => r.data),
   remove: (id) => api.delete(`/leave/${id}`).then((r) => r.data),
   emailBalance: (data) => api.post('/leave/email-balance', data).then((r) => r.data),
+  downloadBalance: (params) =>
+    api.get('/leave/download-balance', { params, responseType: 'blob' }),
 };
 
 export const calendarApi = {
