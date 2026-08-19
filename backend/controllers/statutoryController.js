@@ -13,10 +13,10 @@ const getSettings = async () => {
   return s;
 };
 
-/** Map department names to Café / Chemist buckets for ACC filing */
+/** Map department names to Cafe / Chemist buckets for ACC filing */
 const normalizeAccDept = (name) => {
   const n = String(name || '').toLowerCase();
-  if (/caf[eé]/.test(n)) return 'Café';
+  if (/caf[eé]/.test(n)) return 'Cafe';
   if (/chemist/.test(n)) return 'Chemist';
   return String(name || 'Other');
 };
@@ -243,7 +243,7 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     const dept = normalizeAccDept(r.departmentName);
     accByDept[dept] = round2((accByDept[dept] || 0) + r.total);
   }
-  const accCafeTotal = accByDept['Café'] || 0;
+  const accCafeTotal = accByDept.Cafe || 0;
   const accChemistTotal = accByDept.Chemist || 0;
 
   // Recompute totals after overrides

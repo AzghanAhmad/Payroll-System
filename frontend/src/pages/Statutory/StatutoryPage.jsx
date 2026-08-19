@@ -39,9 +39,23 @@ const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 
 const normalizeAccDept = (name) => {
   const n = String(name || '').toLowerCase();
-  if (/caf[eé]/.test(n)) return 'Café';
+  if (/caf[eé]/.test(n)) return 'Cafe';
   if (/chemist/.test(n)) return 'Chemist';
   return String(name || 'Other');
+};
+
+const computeAccDeptTotals = (rows = []) => {
+  let cafe = 0;
+  let chemist = 0;
+  let all = 0;
+  for (const r of rows) {
+    const t = Number(r.total) || 0;
+    all += t;
+    const dept = normalizeAccDept(r.departmentName);
+    if (dept === 'Cafe') cafe += t;
+    else if (dept === 'Chemist') chemist += t;
+  }
+  return { all: round2(all), cafe: round2(cafe), chemist: round2(chemist) };
 };
 
 const recalcPayeRow = (row, syncBaseFromGross = true) => {
@@ -247,11 +261,19 @@ export default function StatutoryPage() {
   };
 
   const downloadAcc = () => {
-    const rows = (view?.acc?.rows || []).map((r) => [
+    const accRows = view?.acc?.rows || [];
+    const rows = accRows.map((r) => [
       r.row, r.name,
       ...(r.weeks || []).flatMap((w) => [w.employee, w.employer]),
       r.total,
     ]);
+    const totals = computeAccDeptTotals(accRows);
+    const grandTotal = totals.all || view?.acc?.total || 0;
+    rows.push(
+      ['Total ACC Cafe & Chemist', '', '', '', '', '', '', '', '', '', '', '', grandTotal],
+      ['', '', '', '', '', '', '', '', '', '', '', 'Cafe', totals.cafe],
+      ['', '', '', '', '', '', '', '', '', '', '', 'Chemist', totals.chemist],
+    );
     const wHeaders = [1, 2, 3, 4, 5].flatMap((w) => [`W${w} Employee`, `W${w} Employer`]);
     downloadCsv(`ACC_${MONTHS[month - 1]}_${year}.csv`, ['#', 'Name', ...wHeaders, 'Total'], rows);
   };
@@ -275,19 +297,10 @@ export default function StatutoryPage() {
   const payeGrossTotal = round2(payeRows.reduce((s, r) => s + Number(r.grossTotal || 0), 0));
   const payeTaxTotal = round2(payeRows.reduce((s, r) => s + Number(r.totalTax || 0), 0));
   const payeSummary = view?.paye?.summary || {};
-  const accDeptTotals = useMemo(() => {
-    let cafe = 0;
-    let chemist = 0;
-    let all = 0;
-    for (const r of view?.acc?.rows || []) {
-      const t = Number(r.total) || 0;
-      all += t;
-      const dept = normalizeAccDept(r.departmentName);
-      if (dept === 'Café') cafe += t;
-      else if (dept === 'Chemist') chemist += t;
-    }
-    return { all: round2(all), cafe: round2(cafe), chemist: round2(chemist) };
-  }, [view?.acc?.rows]);
+  const accDeptTotals = useMemo(
+    () => computeAccDeptTotals(view?.acc?.rows || []),
+    [view?.acc?.rows]
+  );
 
   return (
     <AppLayout title="Statutory Sheets">
@@ -739,12 +752,12 @@ export default function StatutoryPage() {
                   </tbody>
                   <tfoot>
                     <tr className="bg-amber-100 font-semibold">
-                      <td className="px-2 py-3" colSpan={12}>Total ACC Café &amp; Chemist</td>
+                      <td className="px-2 py-3" colSpan={12}>Total ACC Cafe &amp; Chemist</td>
                       <td className="px-2 py-3 text-right">{formatMoney(accDeptTotals.all || view?.acc?.total)}</td>
                     </tr>
                     <tr className="bg-amber-50 font-medium">
                       <td className="px-2 py-2" colSpan={11} />
-                      <td className="px-2 py-2 text-right">Café</td>
+                      <td className="px-2 py-2 text-right">Cafe</td>
                       <td className="px-2 py-2 text-right">{formatMoney(accDeptTotals.cafe)}</td>
                     </tr>
                     <tr className="bg-amber-50 font-medium">
