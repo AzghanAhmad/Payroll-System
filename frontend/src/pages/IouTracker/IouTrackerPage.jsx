@@ -8,8 +8,18 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { DownloadMenu } from '@/components/ui/DownloadMenu';
 import { statutoryApi, loanApi, employeeApi } from '@/services';
 import { MONTHS, formatMoney, yearOptions } from '@/utils/helpers';
+
+const saveBlob = (data, filename, mime) => {
+  const url = window.URL.createObjectURL(new Blob([data], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
 
 const SAVE_DELAY_MS = 450;
 
@@ -244,10 +254,37 @@ export default function IouTrackerPage() {
                 Weekly payments sync to payroll &amp; payslips when those weeks exist.
               </p>
             </div>
-            <Button type="button" onClick={() => setAddOpen(true)}>
-              <Plus size={16} className="mr-1.5" />
-              Add IOU
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <DownloadMenu
+                disabled={isLoading}
+                onPdf={async () => {
+                  try {
+                    const res = await statutoryApi.exportIouPdf({ year, month, week: viewWeek });
+                    saveBlob(res.data, `IOU_Tracker_${MONTHS[month - 1]}_${year}.pdf`, 'application/pdf');
+                    toast.success('IOU tracker PDF downloaded');
+                  } catch (err) {
+                    toast.error(err.response?.data?.message || 'PDF download failed');
+                  }
+                }}
+                onExcel={async () => {
+                  try {
+                    const res = await statutoryApi.exportIouExcel({ year, month, week: viewWeek });
+                    saveBlob(
+                      res.data,
+                      `IOU_Tracker_${MONTHS[month - 1]}_${year}.xlsx`,
+                      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    );
+                    toast.success('IOU tracker Excel downloaded');
+                  } catch (err) {
+                    toast.error(err.response?.data?.message || 'Excel download failed');
+                  }
+                }}
+              />
+              <Button type="button" onClick={() => setAddOpen(true)}>
+                <Plus size={16} className="mr-1.5" />
+                Add IOU
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3 items-end">

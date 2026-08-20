@@ -539,3 +539,119 @@ export const getIouTracker = asyncHandler(async (req, res) => {
     staff,
   });
 });
+
+const captureStatutorySheets = (year, month) =>
+  new Promise((resolve, reject) => {
+    const fakeReq = { query: { year, month } };
+    const fakeRes = {
+      json(data) {
+        resolve(data);
+      },
+      status() {
+        return this;
+      },
+    };
+    getStatutorySheets(fakeReq, fakeRes, reject);
+  });
+
+export const exportNpfExcel = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const data = await captureStatutorySheets(year, month);
+  const { writeNpfSheetExcel } = await import('../services/npfSheetExport.js');
+  await writeNpfSheetExcel(res, {
+    year,
+    month,
+    employer: data.employer,
+    period: data.period,
+    npf: data.npf,
+  });
+});
+
+export const exportNpfPdf = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const data = await captureStatutorySheets(year, month);
+  const { streamNpfSheetPdf } = await import('../services/npfSheetExport.js');
+  streamNpfSheetPdf(res, {
+    year,
+    month,
+    employer: data.employer,
+    period: data.period,
+    npf: data.npf,
+  });
+});
+
+export const exportAccExcel = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const data = await captureStatutorySheets(year, month);
+  const { writeAccSheetExcel } = await import('../services/accSheetExport.js');
+  await writeAccSheetExcel(res, {
+    year,
+    month,
+    employer: data.employer,
+    acc: data.acc,
+  });
+});
+
+export const exportAccPdf = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const data = await captureStatutorySheets(year, month);
+  const { streamAccSheetPdf } = await import('../services/accSheetExport.js');
+  streamAccSheetPdf(res, {
+    year,
+    month,
+    employer: data.employer,
+    acc: data.acc,
+  });
+});
+
+const captureIouTracker = (year, month, week) =>
+  new Promise((resolve, reject) => {
+    const fakeReq = { query: { year, month, week } };
+    const fakeRes = {
+      json(data) {
+        resolve(data);
+      },
+      status() {
+        return this;
+      },
+    };
+    getIouTracker(fakeReq, fakeRes, reject);
+  });
+
+export const exportIouTrackerExcel = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const month = Number(req.query.month) || new Date().getMonth() + 1;
+  const week = Number(req.query.week) || 1;
+  const data = await captureIouTracker(year, month, week);
+  const { writeIouTrackerExcel } = await import('../services/iouTrackerExport.js');
+  await writeIouTrackerExcel(res, {
+    year: data.year,
+    month: data.month,
+    viewWeek: data.viewWeek,
+    totals: data.totals,
+    staff: data.staff,
+  });
+});
+
+export const exportIouTrackerPdf = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const month = Number(req.query.month) || new Date().getMonth() + 1;
+  const week = Number(req.query.week) || 1;
+  const data = await captureIouTracker(year, month, week);
+  const { streamIouTrackerPdf } = await import('../services/iouTrackerExport.js');
+  streamIouTrackerPdf(res, {
+    year: data.year,
+    month: data.month,
+    viewWeek: data.viewWeek,
+    totals: data.totals,
+    staff: data.staff,
+  });
+});

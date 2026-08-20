@@ -10,7 +10,7 @@ import {
   DEFAULT_LEAVE_ENTITLEMENTS,
   startOfDay,
 } from '../services/leaveService.js';
-import { streamLeaveBalancePdf } from '../services/leaveBalancePdf.js';
+import { streamLeaveBalancePdf, streamLeaveUsageLogPdf } from '../services/leaveBalancePdf.js';
 
 const getSettings = async () => {
   let s = await Settings.findOne();
@@ -380,5 +380,98 @@ export const downloadLeaveBalance = asyncHandler(async (req, res) => {
     row,
     asOf,
     labels: LEAVE_TYPE_LABELS,
+  });
+});
+
+/** Download one staff member's leave request / usage log as PDF */
+export const downloadLeaveUsage = asyncHandler(async (req, res) => {
+  const { employeeId } = req.query;
+  if (!employeeId) throw new AppError('employeeId required');
+
+  const emp = await Employee.findById(employeeId).select('fullName');
+  if (!emp) throw new AppError('Employee not found', 404);
+
+  const settings = await getSettings();
+  const entries = await LeaveEntry.find({ employee: employeeId })
+    .select('leaveType startDate endDate calculatedWorkdays overrideDays daysCounted status approvedBy notes')
+    .sort({ startDate: -1, createdAt: -1 });
+
+  streamLeaveUsageLogPdf(res, {
+    companyName: settings.companyName || 'Payroll',
+    staffName: emp.fullName,
+    entries,
+    labels: LEAVE_TYPE_LABELS,
+  });
+});
+
+/** Full leave workbook (dashboard + usage log) as Excel */
+export const downloadLeaveWorkbookExcel = asyncHandler(async (req, res) => {
+  const asOfStr = req.query.asOf;
+  const asOf = asOfStr ? new Date(asOfStr) : new Date();
+  const settings = await getSettings();
+  const entitlements = getEntitlements(settings);
+  const employees = await Employee.find({ status: { $in: ['active', 'inactive'] } })
+    .select('fullName employeeId hireDate status email')
+    .sort({ fullName: 1 });
+  const approved = await LeaveEntry.find({ status: 'Approved' }).select(
+    'employee leaveType startDate endDate daysCounted'
+  );
+  const staff = employees.map((emp) => buildStaffBalanceRow(emp, approved, entitlements, asOf));
+  const totals = {};
+  for (const type of LEAVE_TYPES) {
+    totals[type] = round2(staff.reduce((s, r) => s + (r.types[type]?.left || 0), 0));
+  }
+  const dash = {
+    asOf,
+    entitlements,
+    labels: LEAVE_TYPE_LABELS,
+    staff,
+    totals,
+    missingHireDates: staff.filter((s) => s.status === 'Hire date required').length,
+  };
+  const entries = await LeaveEntry.find({})
+    .populate('employee', 'fullName employeeId hireDate')
+    .sort({ startDate: -1, createdAt: -1 });
+  const { writeLeaveWorkbookExcel } = await import('../services/leaveWorkbookExport.js');
+  await writeLeaveWorkbookExcel(res, {
+    dash,
+    entries,
+    asOf: asOfStr || asOf.toISOString().slice(0, 10),
+  });
+});
+
+/** Full leave workbook as PDF */
+export const downloadLeaveWorkbookPdf = asyncHandler(async (req, res) => {
+  const asOfStr = req.query.asOf;
+  const asOf = asOfStr ? new Date(asOfStr) : new Date();
+  const settings = await getSettings();
+  const entitlements = getEntitlements(settings);
+  const employees = await Employee.find({ status: { $in: ['active', 'inactive'] } })
+    .select('fullName employeeId hireDate status email')
+    .sort({ fullName: 1 });
+  const approved = await LeaveEntry.find({ status: 'Approved' }).select(
+    'employee leaveType startDate endDate daysCounted'
+  );
+  const staff = employees.map((emp) => buildStaffBalanceRow(emp, approved, entitlements, asOf));
+  const totals = {};
+  for (const type of LEAVE_TYPES) {
+    totals[type] = round2(staff.reduce((s, r) => s + (r.types[type]?.left || 0), 0));
+  }
+  const dash = {
+    asOf,
+    entitlements,
+    labels: LEAVE_TYPE_LABELS,
+    staff,
+    totals,
+    missingHireDates: staff.filter((s) => s.status === 'Hire date required').length,
+  };
+  const entries = await LeaveEntry.find({})
+    .populate('employee', 'fullName employeeId hireDate')
+    .sort({ startDate: -1, createdAt: -1 });
+  const { streamLeaveWorkbookPdf } = await import('../services/leaveWorkbookExport.js');
+  streamLeaveWorkbookPdf(res, {
+    dash,
+    entries,
+    asOf: asOfStr || asOf.toISOString().slice(0, 10),
   });
 });

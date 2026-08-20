@@ -9,8 +9,18 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Textarea } from '@/components/ui/Input';
 import { ShareMenu } from '@/components/ui/ShareMenu';
+import { DownloadMenu } from '@/components/ui/DownloadMenu';
 import { leaveApi, employeeApi } from '@/services';
 import { formatNumber } from '@/utils/helpers';
+
+const saveBlobFile = (data, filename, mime) => {
+  const url = window.URL.createObjectURL(new Blob([data], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
 
 const fmtDate = (d) => {
   if (!d) return '—';
@@ -46,16 +56,40 @@ const leavePdfFilename = (staffName, asOf) => {
   return `Leave_${name}_${String(asOf).slice(0, 10)}.pdf`;
 };
 
+const leaveUsageFilename = (staffName) => {
+  const name = String(staffName || 'Staff')
+    .replace(/[^\w\s'-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+  return `Leave_Usage_${name}_${new Date().toISOString().slice(0, 10)}.pdf`;
+};
+
+const saveBlob = (blob, filename) => {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
+
 const downloadLeaveBalance = async (row, asOf) => {
   try {
-    const res = await leaveApi.downloadBalance({ employeeId: row.employeeId, asOf });
-    const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = leavePdfFilename(row.staffName, asOf);
-    a.click();
-    window.URL.revokeObjectURL(url);
+    const employeeId = row.employeeId;
+    const staffName = row.staffName || row.employeeName;
+    const res = await leaveApi.downloadBalance({ employeeId, asOf });
+    saveBlob(new Blob([res.data], { type: 'application/pdf' }), leavePdfFilename(staffName, asOf));
     toast.success('Leave balance downloaded');
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Download failed');
+  }
+};
+
+const downloadLeaveUsage = async (employeeId, staffName) => {
+  try {
+    const res = await leaveApi.downloadUsage({ employeeId });
+    saveBlob(new Blob([res.data], { type: 'application/pdf' }), leaveUsageFilename(staffName));
+    toast.success('Leave usage log downloaded');
   } catch (err) {
     toast.error(err.response?.data?.message || 'Download failed');
   }
@@ -217,11 +251,39 @@ export default function LeavePage() {
         {tab === 'dashboard' && (
           <>
             <Card className="space-y-3">
-              <h3 className="font-heading text-lg">Staff Leave Balance Dashboard</h3>
-              <p className="text-sm text-muted max-w-3xl">
-                Leave balances reset automatically on each employee&apos;s hire-date anniversary.
-                Enter leave once in the log; balances update automatically.
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-heading text-lg">Staff Leave Balance Dashboard</h3>
+                  <p className="text-sm text-muted max-w-3xl mt-1">
+                    Leave balances reset automatically on each employee&apos;s hire-date anniversary.
+                    Enter leave once in the log; balances update automatically.
+                  </p>
+                </div>
+                <DownloadMenu
+                  onPdf={async () => {
+                    try {
+                      const res = await leaveApi.downloadWorkbookPdf({ asOf });
+                      saveBlobFile(res.data, `Leave_Balance_${asOf}.pdf`, 'application/pdf');
+                      toast.success('Leave sheet PDF downloaded');
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || 'PDF download failed');
+                    }
+                  }}
+                  onExcel={async () => {
+                    try {
+                      const res = await leaveApi.downloadWorkbookExcel({ asOf });
+                      saveBlobFile(
+                        res.data,
+                        `Leave_Balance_${asOf}.xlsx`,
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                      );
+                      toast.success('Leave sheet Excel downloaded');
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || 'Excel download failed');
+                    }
+                  }}
+                />
+              </div>
               <div className="flex flex-wrap gap-4 items-end">
                 {TYPE_ORDER.map((t) => (
                   <div key={t} className="rounded-[14px] bg-emerald-50 border border-emerald-100 px-3 py-2 min-w-[120px]">
@@ -437,6 +499,19 @@ export default function LeavePage() {
                         <td className="px-2 py-2">{e.notes}</td>
                         <td className="px-2 py-2">
                           <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                            <button
+                              type="button"
+                              className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+                              title="Download usage log for this staff"
+                              onClick={() =>
+                                downloadLeaveUsage(
+                                  e.employee?._id || e.employee,
+                                  e.employee?.fullName
+                                )
+                              }
+                            >
+                              <Download size={15} />
+                            </button>
                             <Button type="button" size="sm" variant="ghost" onClick={() => startEdit(e)}>
                               Edit
                             </Button>
@@ -466,19 +541,61 @@ export default function LeavePage() {
                   Read-only. Record leave on the Leave Request / Usage Log tab.
                 </p>
               </div>
-              <Input label="As of Date" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
+              <div className="flex flex-wrap gap-2 items-end">
+                <Input label="As of Date" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
+                <DownloadMenu
+                  onPdf={async () => {
+                    try {
+                      const res = await leaveApi.downloadWorkbookPdf({ asOf });
+                      saveBlobFile(res.data, `Leave_Balance_${asOf}.pdf`, 'application/pdf');
+                      toast.success('Leave sheet PDF downloaded');
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || 'PDF download failed');
+                    }
+                  }}
+                  onExcel={async () => {
+                    try {
+                      const res = await leaveApi.downloadWorkbookExcel({ asOf });
+                      saveBlobFile(
+                        res.data,
+                        `Leave_Balance_${asOf}.xlsx`,
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                      );
+                      toast.success('Leave sheet Excel downloaded');
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || 'Excel download failed');
+                    }
+                  }}
+                />
+              </div>
             </Card>
 
             <div className="grid grid-cols-1 gap-4">
               {filteredSheets.map((sheet) => (
                 <Card key={sheet.employeeId} className="space-y-3 border-l-4 border-l-emerald-400 max-w-4xl">
-                  <div>
-                    <h4 className="font-heading text-base uppercase tracking-wide">
-                      {sheet.employeeName} — Leave Balance
-                    </h4>
-                    <p className="text-xs text-muted mt-1">
-                      This sheet is read-only. Record leave on the LeaveTracker tab.
-                    </p>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-heading text-base uppercase tracking-wide">
+                        {sheet.employeeName} — Leave Balance
+                      </h4>
+                      <p className="text-xs text-muted mt-1">
+                        This sheet is read-only. Record leave on the LeaveTracker tab.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-sm hover:bg-slate-50 cursor-pointer"
+                      title="Download leave balance PDF"
+                      onClick={() =>
+                        downloadLeaveBalance(
+                          { employeeId: sheet.employeeId, staffName: sheet.employeeName },
+                          asOf
+                        )
+                      }
+                    >
+                      <Download size={15} />
+                      Download
+                    </button>
                   </div>
 
                   <dl className="grid grid-cols-2 gap-2 text-sm">

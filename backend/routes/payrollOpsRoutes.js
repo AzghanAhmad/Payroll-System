@@ -8,6 +8,8 @@ const router = Router();
 router.use(protect);
 
 router.get('/schedule', ctrl.getSchedule);
+router.get('/schedule/export/excel', ctrl.exportScheduleExcel);
+router.get('/schedule/export/pdf', ctrl.exportSchedulePdf);
 router.get('/month-control', ctrl.getMonthControl);
 router.post('/month-control/create-next', authorize('admin', 'manager', 'hr'), ctrl.createNextMonth);
 router.put('/month-control/current', authorize('admin', 'manager', 'hr'), ctrl.setCurrentMonth);

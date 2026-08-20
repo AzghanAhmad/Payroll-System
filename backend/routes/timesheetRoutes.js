@@ -5,6 +5,8 @@ import { protect, authorize } from '../middleware/auth.js';
 const router = Router();
 router.use(protect);
 
+router.get('/export/excel', ctrl.exportTimesheetExcel);
+router.get('/export/pdf', ctrl.exportTimesheetPdf);
 router.get('/', ctrl.listTimesheets);
 router.get('/:year/:month', ctrl.getOrCreateTimesheet);
 router.put('/:id', authorize('admin', 'manager', 'hr'), ctrl.updateTimesheet);

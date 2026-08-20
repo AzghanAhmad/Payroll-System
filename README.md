@@ -13,12 +13,18 @@ Licensed under the [MIT License](LICENSE).
 | Backend  | Node.js, Express, MongoDB, Mongoose, JWT, bcrypt, Multer, PDFKit, ExcelJS, Nodemailer, Helmet, Morgan, Cors                    |
 
 
+
+
 ## Quick start (local)
+
+
 
 ### Prerequisites
 
 - Node.js 20+
 - MongoDB locally **or** a [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) URI
+
+
 
 ### Backend
 
@@ -47,10 +53,12 @@ App: `http://localhost:5173` (Vite proxies `/api` and `/uploads` to the backend)
 ### Default logins (after seed)
 
 
-| Role  | Email                                             | Password |
-| ----- | ------------------------------------------------- | -------- |
-| Admin | [admin123@gmail.com](mailto:admin123@gmail.com)   | admin123 |
-| HR    | [hr@alphagroup.local](mailto:hr@alphagroup.local) | hr12345  |
+| Role  | Email                                                 | Password            |
+| ----- | ----------------------------------------------------- | ------------------- |
+| Admin | [alphacc2018@gmail.com](mailto:alphacc2018@gmail.com) | AlphaCC@Pay2018!xK9 |
+| HR    | [hr@alphagroup.local](mailto:hr@alphagroup.local)     | hr12345             |
+
+
 
 
 ## Deploy (Railway + Atlas)
@@ -75,6 +83,8 @@ npm run build   # install backend + frontend, build Vite app
 npm start       # node backend/server.js (serves API + frontend/dist)
 ```
 
+
+
 ## Modules
 
 1. **Dashboard** — KPI cards, charts, quick actions, upcoming payroll
@@ -87,6 +97,8 @@ npm start       # node backend/server.js (serves API + frontend/dist)
 8. **Reports** — Weekly/monthly/yearly/department/IOU + exports
 9. **Settings** — Company, logo, payroll rules, leave, statutory, departments
 10. **Auth** — JWT access + refresh, roles, sign up / sign in, forgot/reset password
+
+
 
 ## API prefix
 

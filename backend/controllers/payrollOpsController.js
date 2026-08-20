@@ -44,6 +44,20 @@ export const getSchedule = asyncHandler(async (req, res) => {
   res.json({ year, rows });
 });
 
+export const exportScheduleExcel = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const rows = generatePayrollSchedule(year);
+  const { writeScheduleExcel } = await import('../services/scheduleExport.js');
+  await writeScheduleExcel(res, { year, rows });
+});
+
+export const exportSchedulePdf = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const rows = generatePayrollSchedule(year);
+  const { streamSchedulePdf } = await import('../services/scheduleExport.js');
+  streamSchedulePdf(res, { year, rows });
+});
+
 export const getMonthControl = asyncHandler(async (req, res) => {
   const settings = ensureCurrentMonth(await getSettings());
   await settings.save();

@@ -81,6 +81,13 @@ export const downloadPayslip = asyncHandler(async (req, res) => {
   res.sendFile(file);
 });
 
+export const downloadPayslipExcel = asyncHandler(async (req, res) => {
+  const { writePayslipExcel } = await import('../services/payslipExcel.js');
+  const payslip = await Payslip.findById(req.params.id);
+  if (!payslip) throw new AppError('Payslip not found', 404);
+  await writePayslipExcel(res, req.params.id);
+});
+
 /** Zip all payslips for a period — one download instead of many sequential files */
 export const downloadPayslipPack = asyncHandler(async (req, res) => {
   const year = Number(req.query.year);
@@ -116,6 +123,25 @@ export const downloadPayslipPack = asyncHandler(async (req, res) => {
   }
 
   await archive.finalize();
+});
+
+export const downloadPayslipPackExcel = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  const type = req.query.type || 'weekly';
+  if (!year || !month) throw new AppError('year and month required');
+
+  const filter = { year, month, type };
+  if (type === 'weekly' && req.query.week) filter.week = Number(req.query.week);
+
+  const payslips = await Payslip.find(filter)
+    .populate('employee', 'employeeId fullName position')
+    .sort({ week: 1 });
+
+  if (!payslips.length) throw new AppError('No payslips for this period', 404);
+
+  const { writePayslipPackExcel } = await import('../services/payslipExcel.js');
+  await writePayslipPackExcel(res, payslips);
 });
 
 export const emailPayslip = asyncHandler(async (req, res) => {

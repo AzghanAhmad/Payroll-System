@@ -6,8 +6,18 @@ import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
+import { DownloadMenu } from '@/components/ui/DownloadMenu';
 import { statutoryApi } from '@/services';
 import { MONTHS, formatMoney, yearOptions } from '@/utils/helpers';
+
+const saveBlob = (data, filename, mime) => {
+  const url = URL.createObjectURL(new Blob([data], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 const downloadCsv = (filename, headers, rows) => {
   const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -319,19 +329,62 @@ export default function StatutoryPage() {
             </Select>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                if (tab === 'paye') downloadPaye();
-                else if (tab === 'npf') downloadNpf();
-                else if (tab === 'acc') downloadAcc();
-                else downloadTotals();
-              }}
-            >
-              <Download size={14} className="mr-1" /> Download
-            </Button>
+            {tab === 'npf' || tab === 'acc' ? (
+              <DownloadMenu
+                size="sm"
+                disabled={isLoading}
+                onPdf={async () => {
+                  try {
+                    if (tab === 'npf') {
+                      const res = await statutoryApi.exportNpfPdf({ year, month });
+                      saveBlob(res.data, `NPF_${MONTHS[month - 1]}_${year}.pdf`, 'application/pdf');
+                      toast.success('NPF PDF downloaded');
+                    } else {
+                      const res = await statutoryApi.exportAccPdf({ year, month });
+                      saveBlob(res.data, `ACC_${MONTHS[month - 1]}_${year}.pdf`, 'application/pdf');
+                      toast.success('ACC PDF downloaded');
+                    }
+                  } catch (err) {
+                    toast.error(err.response?.data?.message || 'PDF download failed');
+                  }
+                }}
+                onExcel={async () => {
+                  try {
+                    if (tab === 'npf') {
+                      const res = await statutoryApi.exportNpfExcel({ year, month });
+                      saveBlob(
+                        res.data,
+                        `NPF_${MONTHS[month - 1]}_${year}.xlsx`,
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                      );
+                      toast.success('NPF Excel downloaded');
+                    } else {
+                      const res = await statutoryApi.exportAccExcel({ year, month });
+                      saveBlob(
+                        res.data,
+                        `ACC_${MONTHS[month - 1]}_${year}.xlsx`,
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                      );
+                      toast.success('ACC Excel downloaded');
+                    }
+                  } catch (err) {
+                    toast.error(err.response?.data?.message || 'Excel download failed');
+                  }
+                }}
+              />
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (tab === 'paye') downloadPaye();
+                  else downloadTotals();
+                }}
+              >
+                <Download size={14} className="mr-1" /> Download
+              </Button>
+            )}
             <span className="text-xs text-muted px-2 py-1 rounded-lg bg-amber-50 border border-amber-200">
               {saveMut.isPending ? 'Saving…' : 'Yellow cells edit & autosave'}
             </span>

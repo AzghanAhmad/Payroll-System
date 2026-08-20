@@ -282,3 +282,32 @@ export const updateDay = asyncHandler(async (req, res) => {
   );
   res.json(populated);
 });
+
+const loadTimesheetForExport = async (year, month) => {
+  const settings = await getSettings();
+  const ts = await Timesheet.findOne({ year, month }).populate({
+    path: 'weeks.entries.employee',
+    select: 'employeeId fullName hourlyRate department teaFundAmount status',
+    populate: { path: 'department', select: 'name' },
+  });
+  if (!ts) throw new AppError('Timesheet not found for period', 404);
+  return { ts, settings };
+};
+
+export const exportTimesheetExcel = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const { writeTimesheetWorkbookExcel } = await import('../services/timesheetExport.js');
+  const { ts, settings } = await loadTimesheetForExport(year, month);
+  await writeTimesheetWorkbookExcel(res, { timesheet: ts, settings, year, month });
+});
+
+export const exportTimesheetPdf = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const { streamTimesheetWorkbookPdf } = await import('../services/timesheetExport.js');
+  const { ts, settings } = await loadTimesheetForExport(year, month);
+  streamTimesheetWorkbookPdf(res, { timesheet: ts, settings, year, month });
+});

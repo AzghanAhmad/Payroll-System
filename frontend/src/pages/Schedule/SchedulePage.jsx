@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Input';
+import { DownloadMenu } from '@/components/ui/DownloadMenu';
 import { opsApi } from '@/services';
 import { yearOptions } from '@/utils/helpers';
 
@@ -10,6 +12,15 @@ const fmt = (d) =>
   d
     ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—';
+
+const saveBlob = (data, filename, mime) => {
+  const url = window.URL.createObjectURL(new Blob([data], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
 
 export default function SchedulePage() {
   const now = new Date();
@@ -30,11 +41,38 @@ export default function SchedulePage() {
               Friday–Thursday pay periods with payday the following Friday. Assigned month follows payday.
             </p>
           </div>
-          <Select label="Year" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-            {yearOptions(year).map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </Select>
+          <div className="flex flex-wrap gap-2 items-end">
+            <Select label="Year" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {yearOptions(year).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </Select>
+            <DownloadMenu
+              disabled={isLoading || !(data?.rows || []).length}
+              onPdf={async () => {
+                try {
+                  const res = await opsApi.exportSchedulePdf({ year });
+                  saveBlob(res.data, `Payroll_Schedule_${year}.pdf`, 'application/pdf');
+                  toast.success('Schedule PDF downloaded');
+                } catch (err) {
+                  toast.error(err.response?.data?.message || 'PDF download failed');
+                }
+              }}
+              onExcel={async () => {
+                try {
+                  const res = await opsApi.exportScheduleExcel({ year });
+                  saveBlob(
+                    res.data,
+                    `Payroll_Schedule_${year}.xlsx`,
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                  );
+                  toast.success('Schedule Excel downloaded');
+                } catch (err) {
+                  toast.error(err.response?.data?.message || 'Excel download failed');
+                }
+              }}
+            />
+          </div>
         </Card>
 
         <Card className="overflow-hidden p-0">

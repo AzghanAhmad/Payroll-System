@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
 import { FileUpload } from '@/components/ui/FileUpload';
+import { DownloadMenu } from '@/components/ui/DownloadMenu';
 import { timesheetApi, settingsApi, payrollApi, opsApi, calendarApi } from '@/services';
 import { WEEK_DAYS, MONTHS, formatNumber, formatMoney, yearOptions } from '@/utils/helpers';
 import {
@@ -358,6 +359,41 @@ export default function TimesheetsPage() {
             <span className="text-xs text-muted px-2 py-1 rounded-lg bg-slate-50 border border-border">
               {saveMutation.isPending ? 'Saving…' : 'Autosaves as you type'}
             </span>
+            <DownloadMenu
+              disabled={!timesheet}
+              onPdf={async () => {
+                try {
+                  const res = await timesheetApi.exportPdf({ year, month });
+                  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `Timesheets_${MONTHS[month - 1]}_${year}.pdf`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  toast.success('Timesheet PDF downloaded');
+                } catch (err) {
+                  toast.error(err.response?.data?.message || 'PDF download failed');
+                }
+              }}
+              onExcel={async () => {
+                try {
+                  const res = await timesheetApi.exportExcel({ year, month });
+                  const url = window.URL.createObjectURL(
+                    new Blob([res.data], {
+                      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    })
+                  );
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `Timesheets_${MONTHS[month - 1]}_${year}.xlsx`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  toast.success('Timesheet Excel downloaded');
+                } catch (err) {
+                  toast.error(err.response?.data?.message || 'Excel download failed');
+                }
+              }}
+            />
             <Button
               type="button"
               onClick={async () => {

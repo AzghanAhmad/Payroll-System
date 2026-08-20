@@ -50,6 +50,8 @@ export const timesheetApi = {
   update: (id, data) => api.put(`/timesheets/${id}`, data).then((r) => r.data),
   updateDay: (year, month, week, employeeId, payload) =>
     api.patch(`/timesheets/${year}/${month}/${week}/${employeeId}/day`, payload).then((r) => r.data),
+  exportExcel: (params) => api.get('/timesheets/export/excel', { params, responseType: 'blob' }),
+  exportPdf: (params) => api.get('/timesheets/export/pdf', { params, responseType: 'blob' }),
 };
 
 export const payrollApi = {
@@ -65,7 +67,10 @@ export const payslipApi = {
   list: (params) => api.get('/payslips', { params }).then((r) => r.data),
   get: (id) => api.get(`/payslips/${id}`).then((r) => r.data),
   download: (id) => api.get(`/payslips/download/${id}`, { responseType: 'blob' }),
+  downloadExcel: (id) => api.get(`/payslips/download-excel/${id}`, { responseType: 'blob' }),
   downloadPack: (params) => api.get('/payslips/download-pack', { params, responseType: 'blob' }),
+  downloadPackExcel: (params) =>
+    api.get('/payslips/download-pack-excel', { params, responseType: 'blob' }),
   remove: (id) => api.delete(`/payslips/${id}`).then((r) => r.data),
   removePeriod: (params) => api.delete('/payslips/period', { params }).then((r) => r.data),
   email: (id) => api.post(`/payslips/email/${id}`).then((r) => r.data),
@@ -119,6 +124,12 @@ export const leaveApi = {
   emailBalance: (data) => api.post('/leave/email-balance', data).then((r) => r.data),
   downloadBalance: (params) =>
     api.get('/leave/download-balance', { params, responseType: 'blob' }),
+  downloadUsage: (params) =>
+    api.get('/leave/download-usage', { params, responseType: 'blob' }),
+  downloadWorkbookExcel: (params) =>
+    api.get('/leave/download-workbook/excel', { params, responseType: 'blob' }),
+  downloadWorkbookPdf: (params) =>
+    api.get('/leave/download-workbook/pdf', { params, responseType: 'blob' }),
 };
 
 export const calendarApi = {
@@ -131,6 +142,10 @@ export const calendarApi = {
 
 export const opsApi = {
   schedule: (params) => api.get('/ops/schedule', { params }).then((r) => r.data),
+  exportScheduleExcel: (params) =>
+    api.get('/ops/schedule/export/excel', { params, responseType: 'blob' }),
+  exportSchedulePdf: (params) =>
+    api.get('/ops/schedule/export/pdf', { params, responseType: 'blob' }),
   monthControl: () => api.get('/ops/month-control').then((r) => r.data),
   createNextMonth: () => api.post('/ops/month-control/create-next').then((r) => r.data),
   setCurrentMonth: (data) => api.put('/ops/month-control/current', data).then((r) => r.data),
@@ -149,4 +164,16 @@ export const statutoryApi = {
   sheets: (params) => api.get('/statutory/sheets', { params }).then((r) => r.data),
   saveSheets: (data) => api.put('/statutory/sheets', data).then((r) => r.data),
   iouTracker: (params) => api.get('/statutory/iou-tracker', { params }).then((r) => r.data),
+  exportNpfExcel: (params) =>
+    api.get('/statutory/export/npf/excel', { params, responseType: 'blob' }),
+  exportNpfPdf: (params) =>
+    api.get('/statutory/export/npf/pdf', { params, responseType: 'blob' }),
+  exportAccExcel: (params) =>
+    api.get('/statutory/export/acc/excel', { params, responseType: 'blob' }),
+  exportAccPdf: (params) =>
+    api.get('/statutory/export/acc/pdf', { params, responseType: 'blob' }),
+  exportIouExcel: (params) =>
+    api.get('/statutory/iou-tracker/export/excel', { params, responseType: 'blob' }),
+  exportIouPdf: (params) =>
+    api.get('/statutory/iou-tracker/export/pdf', { params, responseType: 'blob' }),
 };

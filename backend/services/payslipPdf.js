@@ -7,8 +7,14 @@ import Settings from '../models/Settings.js';
 import { uploadRoot } from '../middleware/upload.js';
 import { getCurrencySymbol } from '../utils/currencies.js';
 
-const money = (n, symbol) => `${symbol}${Number(n || 0).toFixed(2)}`;
+const money = (n, symbol) => `${symbol} ${Number(n || 0).toFixed(2)}`;
+const moneyOrDash = (n, symbol) =>
+  n == null || Number(n) === 0 ? '$ -' : money(n, symbol);
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export const buildPayslipFilename = (payslip, ctx = {}) => {
@@ -31,6 +37,9 @@ export const buildPayslipFilename = (payslip, ctx = {}) => {
   return `${name}_${monthLabel}_${y}_${period}_Payslip.pdf`;
 };
 
+export const buildPayslipExcelFilename = (payslip, ctx = {}) =>
+  buildPayslipFilename(payslip, ctx).replace(/\.pdf$/i, '.xlsx');
+
 /** Ensure PDF exists on disk with current naming + content (always regenerates). */
 export const resolvePayslipPdfPath = async (payslipIdOrDoc) => {
   let payslip =
@@ -51,7 +60,6 @@ export const resolvePayslipPdfPath = async (payslipIdOrDoc) => {
   const currentBase = payslip.pdfPath ? path.basename(payslip.pdfPath) : '';
   const currentPath = currentBase ? path.join(dir, currentBase) : '';
 
-  // Remove stale file (old QR / wrong name) before regenerating
   if (currentPath && fs.existsSync(currentPath)) {
     try {
       fs.unlinkSync(currentPath);
@@ -74,6 +82,28 @@ export const resolvePayslipPdfPath = async (payslipIdOrDoc) => {
   return path.join(dir, path.basename(rel));
 };
 
+const resolveLogoPath = (settings) => {
+  if (!settings?.logo) return null;
+  const base = path.basename(String(settings.logo));
+  const candidates = [
+    path.join(uploadRoot, 'logos', base),
+    path.join(uploadRoot, base),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+};
+
+const fmtUsDate = (d) => (d ? new Date(d).toLocaleDateString('en-US') : '—');
+const fmtPayDay = (d) =>
+  d
+    ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '—';
+
+/**
+ * Alpha Group payslip layout (ss2).
+ */
 export const generatePayslipPdf = async (payslipId) => {
   const payslip = await Payslip.findById(payslipId).populate(
     'employee',
@@ -82,99 +112,188 @@ export const generatePayslipPdf = async (payslipId) => {
   if (!payslip) throw new Error('Payslip not found');
 
   const settings = (await Settings.findOne()) || {};
-  const symbol = getCurrencySymbol(settings.currency);
+  const symbol = getCurrencySymbol(settings.currency) || '$';
   const dir = path.join(uploadRoot, 'exports');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const filename = buildPayslipFilename(payslip);
   const filePath = path.join(dir, filename);
 
-  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+  const doc = new PDFDocument({ size: 'A4', margin: 40 });
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
   const emp = payslip.employee || {};
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-US') : '—');
+  const left = 40;
+  const pageW = 515;
+  const now = new Date();
 
-  doc.fillColor('#2563EB').fontSize(20).text(settings.companyName || 'Payroll Company');
-  doc.fillColor('#64748B').fontSize(9).text(settings.companyAddress || '');
-  doc.moveDown(0.5);
-  doc.fillColor('#0F172A').fontSize(16).text('PAYSLIP', { align: 'right' });
-  doc.fontSize(9).fillColor('#64748B').text(`Week ${payslip.week || '—'} · ${payslip.periodLabel || ''}`, { align: 'right' });
-  doc.moveDown();
-  doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#E2E8F0').stroke();
-  doc.moveDown();
-
-  doc.fillColor('#0F172A').fontSize(12).text(`Employee: ${emp.fullName || ''}`);
-  doc.fontSize(9).fillColor('#475569');
-  doc.text(`Position: ${payslip.position || emp.position || '—'}   |   Department: ${payslip.departmentName || '—'}`);
-  doc.text(`Period Start: ${fmtDate(payslip.periodStart)}   |   Period End: ${fmtDate(payslip.periodEnd)}`);
-  doc.text(`Pay Day: ${fmtDate(payslip.payDay)}   |   Hourly Rate: ${money(payslip.hourlyRate, symbol)}`);
-  doc.text(`Bank: ${payslip.bank || emp.bank || '—'}   |   Account: ${payslip.accountNumber || emp.accountNumber || '—'}   |   NPF: ${payslip.npfNumber || emp.npfNumber || '—'}`);
-  doc.moveDown();
-
-  // Payments
-  doc.fontSize(11).fillColor('#2563EB').text('Payments');
-  doc.moveDown(0.3);
-  const payY = doc.y;
-  doc.fontSize(9).fillColor('#64748B');
-  doc.text('Description', 50, payY);
-  doc.text('Hours', 220, payY);
-  doc.text('Rate', 300, payY);
-  doc.text('Value', 400, payY, { width: 100, align: 'right' });
-  doc.moveDown(0.2);
-  doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#E2E8F0').stroke();
-  doc.moveDown(0.3);
-
-  const payRow = (label, hours, rate, value) => {
-    const y = doc.y;
-    doc.fillColor('#334155').text(label, 50, y);
-    doc.text(Number(hours || 0).toFixed(2), 220, y);
-    doc.text(rate != null ? money(rate, symbol) : '—', 300, y);
-    doc.text(money(value, symbol), 400, y, { width: 100, align: 'right' });
-    doc.moveDown(0.35);
-  };
-
-  payRow('Normal Time', payslip.normalHours, payslip.hourlyRate, payslip.normalPay);
-  payRow('Overtime (T 1/2)', payslip.otHours, payslip.otRate || payslip.hourlyRate * 1.5, payslip.otPay);
-  payRow('Double Time (T2)', payslip.doubleHours, payslip.doubleRate || payslip.hourlyRate * 2, payslip.doublePay);
-  doc.font('Helvetica-Bold');
-  payRow('Gross Pay', '', null, payslip.grossPay);
-  doc.font('Helvetica');
-  doc.moveDown(0.5);
-
-  // Deductions
-  doc.fontSize(11).fillColor('#2563EB').text('Deductions');
-  doc.moveDown(0.3);
-  const dedRow = (label, value) => {
-    const y = doc.y;
-    doc.fontSize(9).fillColor('#334155').text(label, 50, y);
-    doc.text(money(value, symbol), 400, y, { width: 100, align: 'right' });
-    doc.moveDown(0.35);
-  };
-  dedRow('NPF / SNPF (10%)', payslip.employeeNpf);
-  dedRow('ACC (1%)', payslip.employeeAcc);
-  dedRow('Tax / PAYE', payslip.tax);
-  dedRow('IOU', payslip.iouDeduction);
-  dedRow('Tea Fund', payslip.teaFund);
-  doc.font('Helvetica-Bold');
-  dedRow('Total Deductions', payslip.totalDeductions);
-  doc.moveDown(0.3);
-  doc.fillColor('#2563EB').fontSize(12).text(`NET PAY  ${money(payslip.netPay, symbol)}`, { align: 'right' });
-  doc.font('Helvetica');
-  doc.moveDown();
-
-  // IOU note
-  doc.fontSize(11).fillColor('#2563EB').text('IOU Note');
-  doc.fontSize(9).fillColor('#475569');
-  doc.text(
-    `Amount: ${money(payslip.iouAmount, symbol)}   |   Paid: ${money(payslip.iouPaid, symbol)}   |   Balance: ${money(payslip.loanBalance, symbol)}   |   Payments: ${payslip.iouPaymentsCount || 0}`
-  );
-  if (payslip.comments) {
-    doc.moveDown(0.3);
-    doc.text(`Comments: ${payslip.comments}`);
+  // —— Header: logo + company contact ——
+  const logoPath = resolveLogoPath(settings);
+  let headerY = 40;
+  if (logoPath) {
+    try {
+      doc.image(logoPath, left, headerY, { fit: [120, 48] });
+    } catch {
+      doc.fillColor('#1D4ED8').fontSize(16).font('Helvetica-Bold').text(settings.companyName || 'ALPHA GROUP', left, headerY);
+    }
+  } else {
+    doc.fillColor('#1D4ED8').fontSize(16).font('Helvetica-Bold').text(settings.companyName || 'ALPHA GROUP', left, headerY);
   }
 
+  doc.fillColor('#334155').fontSize(9).font('Helvetica');
+  const contactX = 200;
+  const address = settings.companyAddress || '';
+  const phone = settings.companyPhone || '';
+  const email = settings.companyEmail || '';
+  doc.text(address, contactX, headerY + 4, { width: 340 });
+  const contactLine = [
+    phone ? `T: ${phone}` : null,
+    email ? `E: ${email}` : null,
+  ]
+    .filter(Boolean)
+    .join('  |  ');
+  if (contactLine) doc.text(contactLine, contactX, headerY + 18, { width: 340 });
+
+  // PAYSLIP title
+  doc.fillColor('#0F172A').fontSize(22).font('Helvetica-Bold').text('PAYSLIP', left, 100);
+
+  // —— Employee / period grid ——
+  const metaY = 132;
+  doc.fontSize(10).font('Helvetica');
+  const label = (t, x, y) => {
+    doc.fillColor('#64748B').font('Helvetica').text(t, x, y);
+  };
+  const value = (t, x, y, opts = {}) => {
+    doc.fillColor('#0F172A').font('Helvetica-Bold').text(t || '—', x, y, opts);
+  };
+
+  label('Employee:', left, metaY);
+  value(emp.fullName || '', left + 70, metaY);
+  label('Period:', 320, metaY);
+  value(`${fmtUsDate(payslip.periodStart)} to ${fmtUsDate(payslip.periodEnd)}`, 365, metaY, { width: 190 });
+
+  label('Position:', left, metaY + 16);
+  value(payslip.position || emp.position || '', left + 70, metaY + 16);
+  label('Month:', 320, metaY + 16);
+  value(MONTH_NAMES[(payslip.month || 1) - 1] || '', 365, metaY + 16);
+  label('Date:', 430, metaY + 16);
+  value(fmtUsDate(now), 460, metaY + 16, { width: 90 });
+
+  label('Department:', left, metaY + 32);
+  value(payslip.departmentName || '', left + 70, metaY + 32);
+  label('Pay Day:', 320, metaY + 32);
+  value(fmtPayDay(payslip.payDay), 365, metaY + 32, { width: 100 });
+  label('Week:', 430, metaY + 32);
+  value(payslip.type === 'weekly' ? String(payslip.week || '—') : '—', 460, metaY + 32);
+  label('Time:', 430, metaY + 48);
+  value(
+    now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }),
+    460,
+    metaY + 48,
+    { width: 90 }
+  );
+
+  // —— Payments | Deductions table ——
+  const tableTop = metaY + 72;
+  const midX = 300;
+  const rightEdge = left + pageW;
+
+  // Header bar
+  doc.rect(left, tableTop, midX - left - 8, 18).stroke('#CBD5E1');
+  doc.rect(midX, tableTop, rightEdge - midX, 18).stroke('#CBD5E1');
+  doc.fillColor('#0F172A').fontSize(9).font('Helvetica-Bold');
+  doc.text('Payments', left + 4, tableTop + 5);
+  doc.text('Hours', left + 100, tableTop + 5, { width: 50, align: 'right' });
+  doc.text('Rate', left + 155, tableTop + 5, { width: 55, align: 'right' });
+  doc.text('Value', left + 215, tableTop + 5, { width: 70, align: 'right' });
+  doc.text('Deductions', midX + 4, tableTop + 5);
+  doc.text('Value', midX + 120, tableTop + 5, { width: 90, align: 'right' });
+
+  const payRows = [
+    ['Normal Time', payslip.normalHours, payslip.hourlyRate, payslip.normalPay],
+    ['Overtime', payslip.otHours, payslip.otRate || (payslip.hourlyRate || 0) * 1.5, payslip.otPay],
+    ['Double Time', payslip.doubleHours, payslip.doubleRate || (payslip.hourlyRate || 0) * 2, payslip.doublePay],
+    ['IOU', null, null, null],
+    ['Tea Fund', null, null, null],
+  ];
+  const dedRows = [
+    ['SNPF', payslip.employeeNpf],
+    ['ACC', payslip.employeeAcc],
+    ['PAYE', payslip.tax],
+    ['IOU', payslip.iouDeduction],
+    ['TEA FUND', payslip.teaFund],
+  ];
+
+  let y = tableTop + 18;
+  doc.font('Helvetica').fontSize(9);
+  for (let i = 0; i < 5; i++) {
+    doc.rect(left, y, midX - left - 8, 18).stroke('#E2E8F0');
+    doc.rect(midX, y, rightEdge - midX, 18).stroke('#E2E8F0');
+    const [pLabel, hours, rate, val] = payRows[i];
+    const [dLabel, dVal] = dedRows[i];
+    doc.fillColor('#334155');
+    doc.text(pLabel, left + 4, y + 5);
+    doc.text(hours != null ? Number(hours).toFixed(2) : '', left + 100, y + 5, { width: 50, align: 'right' });
+    doc.text(rate != null && Number(rate) ? money(rate, symbol) : rate === 0 || hours != null ? moneyOrDash(rate, symbol) : '', left + 155, y + 5, {
+      width: 55,
+      align: 'right',
+    });
+    doc.text(val != null && pLabel !== 'IOU' && pLabel !== 'Tea Fund' ? money(val, symbol) : val ? money(val, symbol) : '', left + 215, y + 5, {
+      width: 70,
+      align: 'right',
+    });
+    doc.text(dLabel, midX + 4, y + 5);
+    doc.text(money(dVal, symbol), midX + 120, y + 5, { width: 90, align: 'right' });
+    y += 18;
+  }
+
+  // Gross / Total deductions
+  doc.rect(left, y, midX - left - 8, 20).fillAndStroke('#FFEDD5', '#FDBA74');
+  doc.rect(midX, y, rightEdge - midX, 20).fillAndStroke('#FFEDD5', '#FDBA74');
+  doc.fillColor('#9A3412').font('Helvetica-Bold').fontSize(9);
+  doc.text('Gross Pay', left + 4, y + 6);
+  doc.text(money(payslip.grossPay, symbol), left + 215, y + 6, { width: 70, align: 'right' });
+  doc.text('Total Deductions', midX + 4, y + 6);
+  doc.text(money(payslip.totalDeductions, symbol), midX + 120, y + 6, { width: 90, align: 'right' });
+  y += 28;
+
+  // NET PAY banner
+  doc.rect(left, y, pageW, 28).fill('#1E40AF');
+  doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold');
+  doc.text('NET PAY', left + 12, y + 8);
+  doc.text(money(payslip.netPay, symbol), left + 300, y + 8, { width: 200, align: 'right' });
+  y += 40;
+
+  // IOU box + Note
+  doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold').text('IOU', left, y);
+  y += 14;
+  doc.fontSize(9).font('Helvetica');
+  const iouBoxW = 200;
+  const iouRows = [
+    ['Amount', money(payslip.iouAmount, symbol)],
+    ['Paid', money(payslip.iouPaid, symbol)],
+    ['Balance', money(payslip.loanBalance, symbol)],
+  ];
+  iouRows.forEach(([lab, val], i) => {
+    const iy = y + i * 16;
+    doc.rect(left, iy, iouBoxW, 16).stroke('#CBD5E1');
+    doc.fillColor('#64748B').text(lab, left + 4, iy + 4);
+    doc.fillColor('#0F172A').text(val, left + 90, iy + 4, { width: 100, align: 'right' });
+  });
+
+  doc.fillColor('#0F172A').font('Helvetica-Bold').text('Note:', midX, y);
+  doc.font('Helvetica').fillColor('#475569').text(payslip.comments || '', midX, y + 14, {
+    width: rightEdge - midX,
+    height: 48,
+  });
+
+  y += 58;
+  doc.fillColor('#334155').fontSize(9).font('Helvetica');
+  doc.text(`No. of payments: ${payslip.iouPaymentsCount || 0}`, left, y);
+  doc.text('For:', left, y + 14);
+
+  // QR footer
   try {
     const company = settings.companyName || 'Payroll';
     const period =
@@ -182,35 +301,21 @@ export const generatePayslipPdf = async (payslipId) => {
       (payslip.type === 'weekly' && payslip.week
         ? `Week ${payslip.week}`
         : `${payslip.month}/${payslip.year}`);
-    // Plain text so phone scanners show a readable summary (not raw JSON / id)
     const qrText = [
       `${company} — Official Payslip`,
       `Employee: ${emp.fullName || emp.employeeId || '—'}`,
-      emp.employeeId ? `Staff ID: ${emp.employeeId}` : null,
       `Period: ${period}`,
-      `Pay Day: ${fmtDate(payslip.payDay)}`,
-      `Gross: ${money(payslip.grossPay, symbol)}`,
       `Net Pay: ${money(payslip.netPay, symbol)}`,
-      'Digitally generated & verified',
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    const qrData = await QRCode.toDataURL(qrText, {
-      errorCorrectionLevel: 'M',
-      margin: 1,
-      width: 200,
-    });
+    ].join('\n');
+    const qrData = await QRCode.toDataURL(qrText, { errorCorrectionLevel: 'M', margin: 1, width: 160 });
     const qrBuf = Buffer.from(qrData.replace(/^data:image\/png;base64,/, ''), 'base64');
-    doc.image(qrBuf, 50, 700, { width: 70 });
+    doc.image(qrBuf, left, 720, { width: 56 });
+    doc.fontSize(8).fillColor('#94A3B8').text('Digitally generated payslip', left + 66, 740);
+    if (settings.digitalSignature) {
+      doc.text(`Authorized: ${settings.digitalSignature}`, left + 66, 752);
+    }
   } catch {
-    // optional
-  }
-
-  doc.fontSize(8).fillColor('#94A3B8').text('Scan for payslip summary', 140, 720);
-  doc.text('Digitally generated payslip', 140, 732);
-  if (settings.digitalSignature) {
-    doc.text(`Authorized: ${settings.digitalSignature}`, 140, 744);
+    /* optional */
   }
 
   doc.end();
