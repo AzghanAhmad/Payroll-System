@@ -36,6 +36,7 @@ const schema = z.object({
   hourlyRate: z.coerce.number().gt(0, 'Hourly rate must be greater than 0'),
   teaFundAmount: z.union([z.coerce.number().min(0), z.literal('')]).optional(),
   hireDate: z.string().min(1, 'Hire date required for leave'),
+  gender: z.enum(['male', 'female'], { required_error: 'Gender required for leave eligibility' }),
   bank: z.string().min(1, 'Bank required for payslips'),
   accountNumber: z.string().min(1, 'Account number required'),
   npfNumber: z.string().min(1, 'NPF number required'),
@@ -146,7 +147,7 @@ export default function EmployeesPage() {
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ status: 'active', hourlyRate: 0 });
+    form.reset({ status: 'active', hourlyRate: 0, gender: '' });
     setPhoto(null);
     setOpen(true);
   };
@@ -166,6 +167,7 @@ export default function EmployeesPage() {
       hourlyRate: row.hourlyRate || 0,
       teaFundAmount: row.teaFundAmount ?? '',
       hireDate: row.hireDate ? String(row.hireDate).slice(0, 10) : '',
+      gender: row.gender || '',
       bank: row.bank || '',
       accountNumber: row.accountNumber || '',
       npfNumber: row.npfNumber || '',
@@ -418,6 +420,11 @@ export default function EmployeesPage() {
           <Input label="Phone" {...form.register('phone')} />
           <Input label="Date of Birth" type="date" {...form.register('dob')} />
           <Input label="Hire Date" type="date" {...form.register('hireDate')} error={form.formState.errors.hireDate?.message} />
+          <Select label="Gender" {...form.register('gender')} error={form.formState.errors.gender?.message}>
+            <option value="">Select…</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+          </Select>
           <Input label="Village" {...form.register('village')} />
           <Input label="Address" {...form.register('address')} />
           <Select label="Department" {...form.register('department')} error={form.formState.errors.department?.message}>
@@ -453,7 +460,8 @@ export default function EmployeesPage() {
             hint="Employee photo — PNG or JPG (saved to server)"
           />
           <p className="sm:col-span-2 text-xs text-muted">
-            Hire date, department, position, rate, bank, account and NPF are required so leave, payroll and payslips work correctly.
+            Hire date, gender, department, position, rate, bank, account and NPF are required so leave, payroll and payslips work correctly.
+            Maternity leave is for female staff; paternity leave is for male staff.
           </p>
           <div className="sm:col-span-2">
             <Textarea label="Notes" {...form.register('notes')} />

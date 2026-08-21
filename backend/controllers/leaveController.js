@@ -9,6 +9,8 @@ import {
   countWorkdays,
   DEFAULT_LEAVE_ENTITLEMENTS,
   startOfDay,
+  isLeaveTypeAllowedForGender,
+  assertLeaveTypeForGender,
 } from '../services/leaveService.js';
 import { streamLeaveBalancePdf, streamLeaveUsageLogPdf } from '../services/leaveBalancePdf.js';
 
@@ -50,6 +52,7 @@ const buildStaffBalanceRow = (emp, entries, entitlements, asOf) => {
     employeeId: emp._id,
     staffName: emp.fullName,
     email: emp.email || '',
+    gender: emp.gender || '',
     hireDate: emp.hireDate || null,
     currentLeaveCycle: cycle.currentCycleStart,
     nextAnniversary: cycle.nextAnniversary,
@@ -60,6 +63,7 @@ const buildStaffBalanceRow = (emp, entries, entitlements, asOf) => {
   };
 
   for (const type of LEAVE_TYPES) {
+    if (!isLeaveTypeAllowedForGender(type, emp.gender)) continue;
     const ent = entitlements[type] || 0;
     let used = 0;
     if (cycle.currentCycleStart) {
@@ -99,7 +103,7 @@ export const getLeaveDashboard = asyncHandler(async (req, res) => {
   const entitlements = getEntitlements(settings);
 
   const employees = await Employee.find({ status: { $in: ['active', 'inactive'] } })
-    .select('fullName employeeId hireDate status email')
+    .select('fullName employeeId hireDate status email gender')
     .sort({ fullName: 1 });
 
   const entries = await LeaveEntry.find({ status: 'Approved' }).select(
@@ -148,35 +152,38 @@ export const getStaffLeaveSheets = asyncHandler(async (req, res) => {
 
   const sheets = employees.map((emp) => {
     const cycle = getLeaveCycle(emp.hireDate, asOf);
-    const types = LEAVE_TYPES.map((type) => {
-      const ent = cycle.hireDate ? entitlements[type] || 0 : 0;
-      let used = 0;
-      if (cycle.currentCycleStart) {
-        for (const e of entries) {
-          if (String(e.employee) !== String(emp._id)) continue;
-          if (e.leaveType !== type) continue;
-          const start = startOfDay(e.startDate);
-          if (start >= cycle.currentCycleStart && start < cycle.nextAnniversary) {
-            used += Number(e.daysCounted) || 0;
+    const types = LEAVE_TYPES.filter((type) => isLeaveTypeAllowedForGender(type, emp.gender)).map(
+      (type) => {
+        const ent = cycle.hireDate ? entitlements[type] || 0 : 0;
+        let used = 0;
+        if (cycle.currentCycleStart) {
+          for (const e of entries) {
+            if (String(e.employee) !== String(emp._id)) continue;
+            if (e.leaveType !== type) continue;
+            const start = startOfDay(e.startDate);
+            if (start >= cycle.currentCycleStart && start < cycle.nextAnniversary) {
+              used += Number(e.daysCounted) || 0;
+            }
           }
         }
+        used = round2(used);
+        const remaining = cycle.hireDate ? round2(Math.max(0, ent - used)) : 0;
+        return {
+          leaveType: type,
+          label: LEAVE_TYPE_LABELS[type],
+          entitlement: ent,
+          approvedUsed: cycle.hireDate ? used : 0,
+          remaining,
+          balanceStatus: remaining <= 0 && ent > 0 ? 'Used' : 'Available',
+          notes: LEAVE_NOTES[type] || '',
+        };
       }
-      used = round2(used);
-      const remaining = cycle.hireDate ? round2(Math.max(0, ent - used)) : 0;
-      return {
-        leaveType: type,
-        label: LEAVE_TYPE_LABELS[type],
-        entitlement: ent,
-        approvedUsed: cycle.hireDate ? used : 0,
-        remaining,
-        balanceStatus: remaining <= 0 && ent > 0 ? 'Used' : 'Available',
-        notes: LEAVE_NOTES[type] || '',
-      };
-    });
+    );
 
     return {
       employeeId: emp._id,
       employeeName: emp.fullName,
+      gender: emp.gender || '',
       department: emp.department?.name || '',
       hireDate: emp.hireDate || null,
       cycleStart: cycle.currentCycleStart,
@@ -223,6 +230,12 @@ export const createLeaveEntry = asyncHandler(async (req, res) => {
   const emp = await Employee.findById(employee);
   if (!emp) throw new AppError('Employee not found', 404);
 
+  try {
+    assertLeaveTypeForGender(leaveType, emp.gender);
+  } catch (err) {
+    throw new AppError(err.message, 400);
+  }
+
   const { calculatedWorkdays, daysCounted } = await computeDays(
     new Date(startDate),
     new Date(endDate),
@@ -245,7 +258,7 @@ export const createLeaveEntry = asyncHandler(async (req, res) => {
 
   const populated = await LeaveEntry.findById(entry._id).populate(
     'employee',
-    'fullName employeeId hireDate'
+    'fullName employeeId hireDate gender'
   );
   res.status(201).json(populated);
 });
@@ -257,6 +270,14 @@ export const updateLeaveEntry = asyncHandler(async (req, res) => {
   const fields = ['employee', 'leaveType', 'startDate', 'endDate', 'overrideDays', 'status', 'approvedBy', 'notes'];
   for (const f of fields) {
     if (req.body[f] !== undefined) entry[f] = req.body[f];
+  }
+
+  const emp = await Employee.findById(entry.employee);
+  if (!emp) throw new AppError('Employee not found', 404);
+  try {
+    assertLeaveTypeForGender(entry.leaveType, emp.gender);
+  } catch (err) {
+    throw new AppError(err.message, 400);
   }
 
   const { calculatedWorkdays, daysCounted } = await computeDays(
@@ -273,7 +294,7 @@ export const updateLeaveEntry = asyncHandler(async (req, res) => {
   await entry.save();
   const populated = await LeaveEntry.findById(entry._id).populate(
     'employee',
-    'fullName employeeId hireDate'
+    'fullName employeeId hireDate gender'
   );
   res.json(populated);
 });
@@ -364,7 +385,7 @@ export const downloadLeaveBalance = asyncHandler(async (req, res) => {
   if (!employeeId) throw new AppError('employeeId required');
 
   const emp = await Employee.findById(employeeId)
-    .select('fullName employeeId hireDate status email')
+    .select('fullName employeeId hireDate status email gender')
     .populate('department', 'name');
   if (!emp) throw new AppError('Employee not found', 404);
 
@@ -419,7 +440,7 @@ export const downloadLeaveWorkbookExcel = asyncHandler(async (req, res) => {
   const settings = await getSettings();
   const entitlements = getEntitlements(settings);
   const employees = await Employee.find({ status: { $in: ['active', 'inactive'] } })
-    .select('fullName employeeId hireDate status email')
+    .select('fullName employeeId hireDate status email gender')
     .sort({ fullName: 1 });
   const approved = await LeaveEntry.find({ status: 'Approved' }).select(
     'employee leaveType startDate endDate daysCounted'
@@ -455,7 +476,7 @@ export const downloadLeaveWorkbookPdf = asyncHandler(async (req, res) => {
   const settings = await getSettings();
   const entitlements = getEntitlements(settings);
   const employees = await Employee.find({ status: { $in: ['active', 'inactive'] } })
-    .select('fullName employeeId hireDate status email')
+    .select('fullName employeeId hireDate status email gender')
     .sort({ fullName: 1 });
   const approved = await LeaveEntry.find({ status: 'Approved' }).select(
     'employee leaveType startDate endDate daysCounted'

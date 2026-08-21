@@ -11,6 +11,8 @@ const employeeSchema = new mongoose.Schema(
     email: { type: String, trim: true, lowercase: true },
     phone: { type: String, default: '' },
     dob: { type: Date },
+    /** Used to restrict maternity (female) / paternity (male) leave */
+    gender: { type: String, enum: ['male', 'female', ''], default: '' },
     village: { type: String, default: '' },
     address: { type: String, default: '' },
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },

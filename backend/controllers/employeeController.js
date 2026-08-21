@@ -117,6 +117,9 @@ export const createEmployee = asyncHandler(async (req, res) => {
   if (!data.accountNumber?.trim()) missing.push('accountNumber');
   if (!data.npfNumber?.trim()) missing.push('npfNumber');
   if (!data.position?.trim()) missing.push('position');
+  if (!data.gender || !['male', 'female'].includes(String(data.gender).toLowerCase())) {
+    missing.push('gender');
+  }
   if (missing.length) {
     throw new AppError(
       `Cannot add employee — required for payroll/leave/payslips: ${missing.join(', ')}`,

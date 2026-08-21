@@ -120,8 +120,12 @@ export async function writeLeaveWorkbookExcel(res, { dash, entries, asOf }) {
       s.daysToReset ?? '',
     ];
     for (const t of TYPE_ORDER) {
-      const x = s.types?.[t] || {};
-      values.push(x.entitlement ?? 0, x.used ?? 0, x.left ?? 0);
+      const x = s.types?.[t];
+      if (!x) {
+        values.push('N/A', 'N/A', 'N/A');
+      } else {
+        values.push(x.entitlement ?? 0, x.used ?? 0, x.left ?? 0);
+      }
     }
     values.push(s.status || '', s.totalLeaveLeft ?? 0);
     values.forEach((v, i) => {
@@ -289,7 +293,8 @@ export function streamLeaveWorkbookPdf(res, { dash, entries, asOf }) {
       fmtDate(s.nextAnniversary),
       String(s.daysToReset ?? ''),
       ...TYPE_ORDER.flatMap((t) => {
-        const x = s.types?.[t] || {};
+        const x = s.types?.[t];
+        if (!x) return ['N/A', 'N/A', 'N/A'];
         return [String(x.entitlement ?? 0), String(x.used ?? 0), String(x.left ?? 0)];
       }),
       s.status || '',

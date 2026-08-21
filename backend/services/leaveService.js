@@ -74,3 +74,30 @@ export const DEFAULT_LEAVE_ENTITLEMENTS = {
   paternity: 3,
   bereavement: 3,
 };
+
+/** Maternity = female only; paternity = male only. Unknown gender blocks both. */
+export const isLeaveTypeAllowedForGender = (leaveType, gender) => {
+  const g = String(gender || '').toLowerCase();
+  if (leaveType === 'maternity') return g === 'female';
+  if (leaveType === 'paternity') return g === 'male';
+  return true;
+};
+
+export const assertLeaveTypeForGender = (leaveType, gender) => {
+  if (isLeaveTypeAllowedForGender(leaveType, gender)) return;
+  const g = String(gender || '').toLowerCase();
+  if (leaveType === 'maternity') {
+    throw new Error(
+      g === 'male'
+        ? 'Maternity leave is only available to female employees'
+        : 'Set the employee gender to Female before recording maternity leave'
+    );
+  }
+  if (leaveType === 'paternity') {
+    throw new Error(
+      g === 'female'
+        ? 'Paternity leave is only available to male employees'
+        : 'Set the employee gender to Male before recording paternity leave'
+    );
+  }
+};

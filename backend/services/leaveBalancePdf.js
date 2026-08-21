@@ -182,7 +182,8 @@ export const streamLeaveBalancePdf = (res, { companyName, row, asOf, labels = LE
   y += rowH;
 
   for (const type of LEAVE_TYPES) {
-    const t = row.types?.[type] || {};
+    const t = row.types?.[type];
+    if (!t) continue;
     const style = TYPE_STYLE[type] || {};
     const entitlement = t.entitlement ?? 0;
     const used = t.used ?? t.approvedUsed ?? 0;
