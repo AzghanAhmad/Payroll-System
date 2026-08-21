@@ -312,6 +312,15 @@ export default function StatutoryPage() {
     [view?.acc?.rows]
   );
 
+  const accCafeRows = useMemo(
+    () => (view?.acc?.rows || []).filter((r) => normalizeAccDept(r.departmentName) === 'Cafe'),
+    [view?.acc?.rows]
+  );
+  const accChemistRows = useMemo(
+    () => (view?.acc?.rows || []).filter((r) => normalizeAccDept(r.departmentName) === 'Chemist'),
+    [view?.acc?.rows]
+  );
+
   return (
     <AppLayout title="Statutory Sheets">
       <div className="space-y-4">
@@ -329,7 +338,7 @@ export default function StatutoryPage() {
             </Select>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            {tab === 'npf' || tab === 'acc' ? (
+            {tab === 'npf' || tab === 'acc' || tab === 'paye' ? (
               <DownloadMenu
                 size="sm"
                 disabled={isLoading}
@@ -339,10 +348,14 @@ export default function StatutoryPage() {
                       const res = await statutoryApi.exportNpfPdf({ year, month });
                       saveBlob(res.data, `NPF_${MONTHS[month - 1]}_${year}.pdf`, 'application/pdf');
                       toast.success('NPF PDF downloaded');
-                    } else {
+                    } else if (tab === 'acc') {
                       const res = await statutoryApi.exportAccPdf({ year, month });
                       saveBlob(res.data, `ACC_${MONTHS[month - 1]}_${year}.pdf`, 'application/pdf');
                       toast.success('ACC PDF downloaded');
+                    } else {
+                      const res = await statutoryApi.exportPayePdf({ year, month });
+                      saveBlob(res.data, `PAYE_P4_${MONTHS[month - 1]}_${year}.pdf`, 'application/pdf');
+                      toast.success('PAYE PDF downloaded');
                     }
                   } catch (err) {
                     toast.error(err.response?.data?.message || 'PDF download failed');
@@ -358,7 +371,7 @@ export default function StatutoryPage() {
                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                       );
                       toast.success('NPF Excel downloaded');
-                    } else {
+                    } else if (tab === 'acc') {
                       const res = await statutoryApi.exportAccExcel({ year, month });
                       saveBlob(
                         res.data,
@@ -366,6 +379,14 @@ export default function StatutoryPage() {
                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                       );
                       toast.success('ACC Excel downloaded');
+                    } else {
+                      const res = await statutoryApi.exportPayeExcel({ year, month });
+                      saveBlob(
+                        res.data,
+                        `PAYE_P4_${MONTHS[month - 1]}_${year}.xlsx`,
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                      );
+                      toast.success('PAYE Excel downloaded');
                     }
                   } catch (err) {
                     toast.error(err.response?.data?.message || 'Excel download failed');
@@ -377,10 +398,7 @@ export default function StatutoryPage() {
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  if (tab === 'paye') downloadPaye();
-                  else downloadTotals();
-                }}
+                onClick={() => downloadTotals()}
               >
                 <Download size={14} className="mr-1" /> Download
               </Button>
@@ -726,100 +744,139 @@ export default function StatutoryPage() {
         )}
 
         {!isLoading && tab === 'acc' && (
-          <div className="space-y-4">
-            <Card className="space-y-2">
-              <h3 className="font-heading">ACC Schedule</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                <div>
-                  <span className="text-muted text-xs block">Employer name</span>
-                  <EditableText
-                    value={view?.employer?.companyName}
-                    onCommit={(v) => updateMeta('_employer', 'companyName', v)}
-                  />
-                </div>
-                <div><span className="text-muted text-xs block">Month of</span>{MONTHS[month - 1]}-{String(year).slice(-2)}</div>
-                <div>
-                  <span className="text-muted text-xs block">Emp. Numbers</span>
-                  <div className="flex gap-2">
-                    <EditableText
-                      value={view?.employer?.accEmpNumber1}
-                      onCommit={(v) => updateMeta('_employer', 'accEmpNumber1', v)}
-                    />
-                    <EditableText
-                      value={view?.employer?.accEmpNumber2}
-                      onCommit={(v) => updateMeta('_employer', 'accEmpNumber2', v)}
-                    />
+          <div className="space-y-6">
+            {[
+              {
+                key: 'cafe',
+                label: 'Cafe',
+                empNumber: view?.employer?.accEmpNumber1,
+                empField: 'accEmpNumber1',
+                rows: accCafeRows,
+                total: accDeptTotals.cafe,
+              },
+              {
+                key: 'chemist',
+                label: 'Chemist',
+                empNumber: view?.employer?.accEmpNumber2,
+                empField: 'accEmpNumber2',
+                rows: accChemistRows,
+                total: accDeptTotals.chemist,
+              },
+            ].map((block) => (
+              <div key={block.key} className="space-y-2">
+                <Card className="space-y-2">
+                  <h3 className="font-heading text-center text-lg">ACC SCHEDULE</h3>
+                  <div className="max-w-xl border border-border rounded-md overflow-hidden text-sm">
+                    <div className="grid grid-cols-[140px_1fr] border-b border-border">
+                      <div className="px-3 py-2 font-semibold bg-slate-50 border-r border-border">Employer name</div>
+                      <div className="px-3 py-2">
+                        <EditableText
+                          value={view?.employer?.companyName}
+                          onCommit={(v) => updateMeta('_employer', 'companyName', v)}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[140px_1fr] border-b border-border">
+                      <div className="px-3 py-2 font-semibold bg-slate-50 border-r border-border">Month of</div>
+                      <div className="px-3 py-2 font-medium">
+                        {MONTHS[month - 1]}-{String(year).slice(-2)}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[140px_1fr]">
+                      <div className="px-3 py-2 font-semibold bg-slate-50 border-r border-border">Emp. Numbers</div>
+                      <div className="px-3 py-2 flex items-center gap-3">
+                        <EditableText
+                          value={block.empNumber}
+                          onCommit={(v) => updateMeta('_employer', block.empField, v)}
+                        />
+                        <span className="text-xs font-semibold text-muted uppercase">{block.label}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </Card>
+                </Card>
 
-            <Card className="overflow-hidden p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[1200px]">
-                  <thead className="bg-slate-100">
-                    <tr className="text-left">
-                      <th className="px-2 py-2" rowSpan={2}>#</th>
-                      <th className="px-2 py-2" rowSpan={2}>Employees name</th>
-                      {[1, 2, 3, 4, 5].map((w) => (
-                        <th key={w} className="px-2 py-2 text-center" colSpan={2}>Week {w}</th>
-                      ))}
-                      <th className="px-2 py-2 text-right" rowSpan={2}>TOTAL</th>
-                    </tr>
-                    <tr className="bg-slate-50 text-muted">
-                      {[1, 2, 3, 4, 5].map((w) => (
-                        <Fragment key={w}>
-                          <th className="px-2 py-1 text-right">Employee</th>
-                          <th className="px-2 py-1 text-right">Employer</th>
-                        </Fragment>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(view?.acc?.rows || []).map((r) => {
-                      const rowKey = r.row || r.name;
-                      return (
-                        <tr key={r.row} className="border-b border-border/40">
-                          <td className="px-2 py-2">{r.row}</td>
-                          <td className="px-2 py-2 font-medium whitespace-nowrap">{r.name}</td>
-                          {r.weeks.map((w, wi) => (
-                            <Fragment key={wi}>
-                              <td className="px-1 py-1">
-                                <EditableNum
-                                  value={w.employee}
-                                  onCommit={(n) => updateAccWeek(rowKey, wi, 'employee', n)}
-                                />
-                              </td>
-                              <td className="px-1 py-1 bg-amber-50/50">
-                                <EditableNum
-                                  value={w.employer}
-                                  onCommit={(n) => updateAccWeek(rowKey, wi, 'employer', n)}
-                                />
-                              </td>
+                <Card className="overflow-hidden p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs min-w-[1200px] border-collapse">
+                      <thead>
+                        <tr className="text-center">
+                          <th className="border px-2 py-2" rowSpan={2}>#</th>
+                          <th className="border px-2 py-2 text-left" rowSpan={2}>Employees name</th>
+                          {[1, 2, 3, 4, 5].map((w) => (
+                            <th key={w} className="border px-2 py-2" colSpan={2}>Week {w}</th>
+                          ))}
+                          <th className="border px-2 py-2" rowSpan={2}>TOTAL</th>
+                        </tr>
+                        <tr className="text-center text-muted">
+                          {[1, 2, 3, 4, 5].map((w) => (
+                            <Fragment key={w}>
+                              <th className="border px-2 py-1">Employee</th>
+                              <th className="border px-2 py-1">Employer</th>
                             </Fragment>
                           ))}
-                          <td className="px-2 py-2 text-right font-semibold">{formatMoney(r.total)}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-amber-100 font-semibold">
-                      <td className="px-2 py-3" colSpan={12}>Total ACC Cafe &amp; Chemist</td>
-                      <td className="px-2 py-3 text-right">{formatMoney(accDeptTotals.all || view?.acc?.total)}</td>
-                    </tr>
-                    <tr className="bg-amber-50 font-medium">
-                      <td className="px-2 py-2" colSpan={11} />
-                      <td className="px-2 py-2 text-right">Cafe</td>
-                      <td className="px-2 py-2 text-right">{formatMoney(accDeptTotals.cafe)}</td>
-                    </tr>
-                    <tr className="bg-amber-50 font-medium">
-                      <td className="px-2 py-2" colSpan={11} />
-                      <td className="px-2 py-2 text-right">Chemist</td>
-                      <td className="px-2 py-2 text-right">{formatMoney(accDeptTotals.chemist)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+                      </thead>
+                      <tbody>
+                        {block.rows.map((r, idx) => {
+                          const rowKey = r.row || r.name;
+                          return (
+                            <tr key={`${block.key}-${r.row}-${r.name}`}>
+                              <td className="border px-2 py-2 text-center">{idx + 1}</td>
+                              <td className="border px-2 py-2 font-medium whitespace-nowrap">{r.name}</td>
+                              {(r.weeks || []).map((w, wi) => (
+                                <Fragment key={wi}>
+                                  <td className="border px-1 py-1">
+                                    <EditableNum
+                                      value={w.employee}
+                                      onCommit={(n) => updateAccWeek(rowKey, wi, 'employee', n)}
+                                    />
+                                  </td>
+                                  <td className="border px-1 py-1 bg-amber-50/50">
+                                    <EditableNum
+                                      value={w.employer}
+                                      onCommit={(n) => updateAccWeek(rowKey, wi, 'employer', n)}
+                                    />
+                                  </td>
+                                </Fragment>
+                              ))}
+                              <td className="border px-2 py-2 text-center font-semibold">{formatMoney(r.total)}</td>
+                            </tr>
+                          );
+                        })}
+                        {!block.rows.length && (
+                          <tr>
+                            <td className="border px-4 py-6 text-muted text-center" colSpan={13}>
+                              No {block.label} staff for this month.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-amber-50 font-semibold">
+                          <td className="border px-2 py-3 text-right" colSpan={12}>
+                            Total ACC {block.label}
+                          </td>
+                          <td className="border px-2 py-3 text-center">{formatMoney(block.total)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </Card>
+              </div>
+            ))}
+
+            <Card className="max-w-md space-y-2">
+              <div className="flex justify-between text-sm font-semibold">
+                <span>Total ACC Cafe &amp; Chemist</span>
+                <span className="underline">{formatMoney(accDeptTotals.all || view?.acc?.total)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Cafe</span>
+                <span className="underline font-semibold">{formatMoney(accDeptTotals.cafe)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Chemist</span>
+                <span className="underline font-semibold">{formatMoney(accDeptTotals.chemist)}</span>
               </div>
             </Card>
           </div>

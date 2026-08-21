@@ -584,6 +584,34 @@ export const exportNpfPdf = asyncHandler(async (req, res) => {
   });
 });
 
+export const exportPayeExcel = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const data = await captureStatutorySheets(year, month);
+  const { writePayeSheetExcel } = await import('../services/payeSheetExport.js');
+  await writePayeSheetExcel(res, {
+    year,
+    month,
+    employer: data.employer,
+    paye: data.paye,
+  });
+});
+
+export const exportPayePdf = asyncHandler(async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month) throw new AppError('year and month required');
+  const data = await captureStatutorySheets(year, month);
+  const { streamPayeSheetPdf } = await import('../services/payeSheetExport.js');
+  streamPayeSheetPdf(res, {
+    year,
+    month,
+    employer: data.employer,
+    paye: data.paye,
+  });
+});
+
 export const exportAccExcel = asyncHandler(async (req, res) => {
   const year = Number(req.query.year);
   const month = Number(req.query.month);

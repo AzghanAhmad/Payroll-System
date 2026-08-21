@@ -363,7 +363,9 @@ export const downloadLeaveBalance = asyncHandler(async (req, res) => {
   const { employeeId, asOf: asOfStr } = req.query;
   if (!employeeId) throw new AppError('employeeId required');
 
-  const emp = await Employee.findById(employeeId).select('fullName employeeId hireDate status email');
+  const emp = await Employee.findById(employeeId)
+    .select('fullName employeeId hireDate status email')
+    .populate('department', 'name');
   if (!emp) throw new AppError('Employee not found', 404);
 
   const asOf = asOfStr ? new Date(asOfStr) : new Date();
@@ -374,6 +376,12 @@ export const downloadLeaveBalance = asyncHandler(async (req, res) => {
   );
 
   const row = buildStaffBalanceRow(emp, entries, entitlements, asOf);
+  row.department = emp.department?.name || '';
+  for (const type of LEAVE_TYPES) {
+    const t = row.types[type];
+    if (!t) continue;
+    t.balanceStatus = t.left <= 0 && t.entitlement > 0 ? 'Used' : 'Available';
+  }
 
   streamLeaveBalancePdf(res, {
     companyName: settings.companyName || 'Payroll',

@@ -598,74 +598,145 @@ export default function LeavePage() {
                     </button>
                   </div>
 
-                  <dl className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <dt className="text-xs text-muted">Employee</dt>
-                      <dd className="font-medium">{sheet.employeeName}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Department</dt>
-                      <dd className="font-medium">{sheet.department || '—'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Hire Date</dt>
-                      <dd>{fmtDate(sheet.hireDate)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Cycle Start</dt>
-                      <dd>{fmtDate(sheet.cycleStart)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Next Reset</dt>
-                      <dd>{fmtDate(sheet.nextReset)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Leave Status</dt>
-                      <dd className="font-medium">{sheet.leaveStatus}</dd>
-                    </div>
-                  </dl>
+                  <div className="overflow-x-auto -mx-1 px-1">
+                    <table className="w-full text-xs border-collapse table-fixed min-w-[640px]">
+                      <colgroup>
+                        <col className="w-[14%]" />
+                        <col className="w-[20%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[18%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[20%]" />
+                      </colgroup>
+                      <tbody>
+                        <tr>
+                          <th className="border border-border bg-sky-50 px-2 py-2 text-left font-semibold text-slate-700">
+                            Employee
+                          </th>
+                          <td className="border border-border px-2 py-2 font-medium">{sheet.employeeName}</td>
+                          <th className="border border-border bg-sky-50 px-2 py-2 text-left font-semibold text-slate-700">
+                            Department
+                          </th>
+                          <td className="border border-border px-2 py-2 font-medium" colSpan={3}>
+                            {sheet.department || '—'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th className="border border-border bg-sky-50 px-2 py-2 text-left font-semibold text-slate-700">
+                            Hire Date
+                          </th>
+                          <td className="border border-border px-2 py-2">{fmtDate(sheet.hireDate)}</td>
+                          <th className="border border-border bg-sky-50 px-2 py-2 text-left font-semibold text-slate-700">
+                            Cycle Start
+                          </th>
+                          <td className="border border-border px-2 py-2">{fmtDate(sheet.cycleStart)}</td>
+                          <th className="border border-border bg-sky-50 px-2 py-2 text-left font-semibold text-slate-700">
+                            Next Reset
+                          </th>
+                          <td className="border border-border px-2 py-2">{fmtDate(sheet.nextReset)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
 
                   <div className="overflow-x-auto -mx-1 px-1">
-                    <table className="w-full text-xs border-collapse min-w-[560px]">
+                    <table className="w-full text-xs border-collapse table-fixed min-w-[640px]">
+                      <colgroup>
+                        <col className="w-[18%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[30%]" />
+                      </colgroup>
                       <thead>
-                        <tr className="text-left text-muted border-b border-border">
-                          <th className="py-2.5 pr-3 font-medium whitespace-nowrap">Leave Type</th>
-                          <th className="py-2.5 px-3 text-right font-medium whitespace-nowrap">Entitlement</th>
-                          <th className="py-2.5 px-3 text-right font-medium whitespace-nowrap">Approved Used</th>
-                          <th className="py-2.5 px-3 text-right font-medium whitespace-nowrap">Remaining</th>
-                          <th className="py-2.5 px-3 font-medium whitespace-nowrap">Status</th>
-                          <th className="py-2.5 pl-3 font-medium whitespace-nowrap">Notes</th>
+                        <tr className="bg-slate-800 text-white">
+                          <th className="border border-slate-700 py-2.5 px-2 text-left font-medium">Leave Type</th>
+                          <th className="border border-slate-700 py-2.5 px-2 text-right font-medium">Entitlement</th>
+                          <th className="border border-slate-700 py-2.5 px-2 text-right font-medium">Approved Used</th>
+                          <th className="border border-slate-700 py-2.5 px-2 text-right font-medium">Remaining</th>
+                          <th className="border border-slate-700 py-2.5 px-2 text-center font-medium">Balance Status</th>
+                          <th className="border border-slate-700 py-2.5 px-2 text-left font-medium">Notes</th>
                         </tr>
                       </thead>
                       <tbody>
                         {sheet.types.map((t) => (
-                          <tr key={t.leaveType} className="border-b border-border/40">
-                            <td className="py-2.5 pr-3 font-medium whitespace-nowrap">{t.label}</td>
-                            <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">{formatNumber(t.entitlement)}</td>
-                            <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">{formatNumber(t.approvedUsed)}</td>
-                            <td className="py-2.5 px-3 text-right font-semibold tabular-nums whitespace-nowrap">{formatNumber(t.remaining)}</td>
-                            <td className="py-2.5 px-3 whitespace-nowrap">
-                              <span className={t.balanceStatus === 'Used' ? 'text-rose-700' : 'text-emerald-700'}>
-                                {t.balanceStatus}
-                              </span>
+                          <tr
+                            key={t.leaveType}
+                            className={
+                              t.leaveType === 'annual'
+                                ? 'bg-yellow-100'
+                                : t.leaveType === 'sick'
+                                  ? 'text-rose-700'
+                                  : t.leaveType === 'maternity'
+                                    ? 'text-violet-700'
+                                    : t.leaveType === 'paternity'
+                                      ? 'text-blue-700'
+                                      : t.leaveType === 'bereavement'
+                                        ? 'text-orange-700'
+                                        : ''
+                            }
+                          >
+                            <td className="border border-border py-2.5 px-2 font-medium whitespace-nowrap">{t.label}</td>
+                            <td className="border border-border py-2.5 px-2 text-right tabular-nums text-slate-900 bg-slate-50">
+                              {formatNumber(t.entitlement)}
                             </td>
-                            <td className="py-2.5 pl-3 text-muted min-w-[140px]">{t.notes}</td>
+                            <td className="border border-border py-2.5 px-2 text-right tabular-nums text-slate-900 bg-slate-50">
+                              {formatNumber(t.approvedUsed)}
+                            </td>
+                            <td className="border border-border py-2.5 px-2 text-right font-semibold tabular-nums text-slate-900 bg-slate-50">
+                              {formatNumber(t.remaining)}
+                            </td>
+                            <td
+                              className={`border border-border py-2.5 px-2 text-center whitespace-nowrap ${
+                                t.balanceStatus === 'Used' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
+                              }`}
+                            >
+                              {t.balanceStatus}
+                            </td>
+                            <td className="border border-border py-2.5 px-2 text-muted text-slate-600">{t.notes}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
 
-                  <div className="flex flex-wrap gap-4 text-sm pt-1">
-                    <div>
-                      Total Leave Remaining:{' '}
-                      <strong>{formatNumber(sheet.totalLeaveRemaining)}</strong>
-                    </div>
-                    <div>
-                      Days to Reset: <strong>{sheet.daysToReset}</strong>
-                    </div>
+                  <div className="overflow-x-auto -mx-1 px-1">
+                    <table className="w-full text-xs border-collapse table-fixed min-w-[480px]">
+                      <colgroup>
+                        <col className="w-[28%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[22%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[22%]" />
+                      </colgroup>
+                      <tbody>
+                        <tr>
+                          <th className="border border-border bg-sky-50 px-2 py-2 text-left font-semibold">
+                            Total Leave Remaining
+                          </th>
+                          <td className="border border-border px-2 py-2 text-right font-semibold tabular-nums">
+                            {formatNumber(sheet.totalLeaveRemaining)}
+                          </td>
+                          <th className="border border-border bg-sky-50 px-2 py-2 text-left font-semibold">
+                            Days to Reset
+                          </th>
+                          <td className="border border-border bg-sky-50 px-2 py-2 text-center font-semibold" colSpan={2}>
+                            {sheet.daysToReset}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th className="border border-border bg-emerald-50 px-2 py-2 text-left font-semibold">
+                            Leave Status
+                          </th>
+                          <td className="border border-border bg-emerald-50 px-2 py-2 font-medium" colSpan={4}>
+                            {sheet.leaveStatus}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                  <p className="text-xs text-muted">
+                  <p className="text-xs text-amber-900/80 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                     Approved leave entered on LeaveTracker automatically reduces the matching balance above.
                   </p>
                 </Card>

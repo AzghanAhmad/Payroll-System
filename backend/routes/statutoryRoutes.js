@@ -9,6 +9,8 @@ router.get('/sheets', ctrl.getStatutorySheets);
 router.put('/sheets', ctrl.saveStatutoryOverrides);
 router.get('/export/npf/excel', ctrl.exportNpfExcel);
 router.get('/export/npf/pdf', ctrl.exportNpfPdf);
+router.get('/export/paye/excel', ctrl.exportPayeExcel);
+router.get('/export/paye/pdf', ctrl.exportPayePdf);
 router.get('/export/acc/excel', ctrl.exportAccExcel);
 router.get('/export/acc/pdf', ctrl.exportAccPdf);
 router.get('/iou-tracker', ctrl.getIouTracker);

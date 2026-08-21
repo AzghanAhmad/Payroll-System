@@ -168,6 +168,10 @@ export const statutoryApi = {
     api.get('/statutory/export/npf/excel', { params, responseType: 'blob' }),
   exportNpfPdf: (params) =>
     api.get('/statutory/export/npf/pdf', { params, responseType: 'blob' }),
+  exportPayeExcel: (params) =>
+    api.get('/statutory/export/paye/excel', { params, responseType: 'blob' }),
+  exportPayePdf: (params) =>
+    api.get('/statutory/export/paye/pdf', { params, responseType: 'blob' }),
   exportAccExcel: (params) =>
     api.get('/statutory/export/acc/excel', { params, responseType: 'blob' }),
   exportAccPdf: (params) =>
