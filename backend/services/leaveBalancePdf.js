@@ -5,6 +5,8 @@ const HEADER_BLUE = '#1E3A5F';
 const LABEL_BLUE = '#DBEAFE';
 const ROW_YELLOW = '#FEF08A';
 const STATUS_GREEN = '#BBF7D0';
+const STATUS_RED = '#FECACA';
+const STATUS_GRAY = '#E2E8F0';
 const NOTE_CREAM = '#FEF3C7';
 const GRAY_BAR = '#E2E8F0';
 
@@ -188,28 +190,46 @@ export const streamLeaveBalancePdf = (res, { companyName, row, asOf, labels = LE
     const entitlement = t.entitlement ?? 0;
     const used = t.used ?? t.approvedUsed ?? 0;
     const remaining = t.left ?? t.remaining ?? 0;
-    const balanceStatus =
-      t.balanceStatus || (remaining <= 0 && entitlement > 0 ? 'Used' : 'Available');
-    const notes = LEAVE_NOTES[type] || '';
+    let balanceStatus = t.balanceStatus || (remaining <= 0 && entitlement > 0 ? 'Used' : 'Available');
+    if (balanceStatus === 'Used') balanceStatus = 'USED';
+    const notes = t.notes || LEAVE_NOTES[type] || '';
     const label = labels[type] || type;
+    const unavailable = balanceStatus === 'Unavailable';
 
     const values = [
       label,
-      fmtNum(entitlement),
-      fmtNum(used),
-      fmtNum(remaining),
+      unavailable ? '—' : fmtNum(entitlement),
+      unavailable ? '—' : fmtNum(used),
+      unavailable ? '—' : fmtNum(remaining),
       balanceStatus,
-      notes,
+      notes || (unavailable ? 'Not eligible' : ''),
     ];
 
     x = left;
     values.forEach((v, i) => {
       const isType = i === 0;
       const isStatus = i === 4;
+      let fill = '#F8FAFC';
+      let color = '#0F172A';
+      if (isType) {
+        fill = style.fill;
+        color = style.text || '#0F172A';
+      } else if (isStatus) {
+        if (balanceStatus === 'USED') {
+          fill = STATUS_RED;
+          color = '#B91C1C';
+        } else if (balanceStatus === 'Unavailable') {
+          fill = STATUS_GRAY;
+          color = '#64748B';
+        } else {
+          fill = STATUS_GREEN;
+          color = '#065F46';
+        }
+      }
       cellText(doc, v, x, y, cols[i].w, rowH, {
-        fill: isType ? style.fill : isStatus ? STATUS_GREEN : '#F8FAFC',
-        color: isType ? style.text || '#0F172A' : '#0F172A',
-        bold: i === 3 || isType,
+        fill,
+        color,
+        bold: i === 3 || isType || isStatus,
         fontSize: i === 5 ? 7 : 9,
         align: cols[i].align,
       });

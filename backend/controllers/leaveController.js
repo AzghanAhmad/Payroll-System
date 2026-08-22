@@ -46,6 +46,48 @@ const computeDays = async (startDate, endDate, overrideDays) => {
   return { calculatedWorkdays: calculated, daysCounted: round2(daysCounted) };
 };
 
+/** Remaining days for a leave type in the current cycle (Approved usage only). */
+const getRemainingLeaveDays = async (emp, leaveType, { excludeEntryId = null, asOf = new Date() } = {}) => {
+  const settings = await getSettings();
+  const entitlements = getEntitlements(settings);
+  let entries = await LeaveEntry.find({ status: 'Approved' }).select(
+    'employee leaveType startDate endDate daysCounted'
+  );
+  if (excludeEntryId) {
+    entries = entries.filter((e) => String(e._id) !== String(excludeEntryId));
+  }
+  const row = buildStaffBalanceRow(emp, entries, entitlements, asOf);
+  const t = row.types?.[leaveType];
+  if (!t || t.balanceStatus === 'Unavailable' || t.available === false) {
+    return { remaining: 0, entitlement: 0, used: 0, unavailable: true };
+  }
+  return {
+    remaining: Number(t.left) || 0,
+    entitlement: Number(t.entitlement) || 0,
+    used: Number(t.used) || 0,
+    unavailable: false,
+  };
+};
+
+const assertWithinLeaveBalance = async (emp, leaveType, daysCounted, status, excludeEntryId = null) => {
+  // Only Approved / Pending requests consume or reserve balance
+  if (!['Approved', 'Pending'].includes(status)) return;
+
+  const days = round2(Number(daysCounted) || 0);
+  if (days <= 0) return;
+
+  const bal = await getRemainingLeaveDays(emp, leaveType, { excludeEntryId });
+  if (bal.unavailable) {
+    throw new AppError(`${LEAVE_TYPE_LABELS[leaveType] || leaveType} is unavailable for this employee`, 400);
+  }
+  if (days > bal.remaining + 1e-9) {
+    throw new AppError(
+      `Leave days (${days}) exceed remaining ${LEAVE_TYPE_LABELS[leaveType] || leaveType} balance (${bal.remaining} day(s) left)`,
+      400
+    );
+  }
+};
+
 const buildStaffBalanceRow = (emp, entries, entitlements, asOf) => {
   const cycle = getLeaveCycle(emp.hireDate, asOf);
   const row = {
@@ -63,7 +105,17 @@ const buildStaffBalanceRow = (emp, entries, entitlements, asOf) => {
   };
 
   for (const type of LEAVE_TYPES) {
-    if (!isLeaveTypeAllowedForGender(type, emp.gender)) continue;
+    const allowed = isLeaveTypeAllowedForGender(type, emp.gender);
+    if (!allowed) {
+      row.types[type] = {
+        entitlement: 0,
+        used: 0,
+        left: 0,
+        balanceStatus: 'Unavailable',
+        available: false,
+      };
+      continue;
+    }
     const ent = entitlements[type] || 0;
     let used = 0;
     if (cycle.currentCycleStart) {
@@ -78,10 +130,13 @@ const buildStaffBalanceRow = (emp, entries, entitlements, asOf) => {
     }
     used = round2(used);
     const left = cycle.hireDate ? round2(Math.max(0, ent - used)) : 0;
+    const entitlement = cycle.hireDate ? ent : 0;
     row.types[type] = {
-      entitlement: cycle.hireDate ? ent : 0,
+      entitlement,
       used: cycle.hireDate ? used : 0,
       left,
+      balanceStatus: left <= 0 && entitlement > 0 ? 'Used' : 'Available',
+      available: true,
     };
     row.totalLeaveLeft = round2(row.totalLeaveLeft + left);
   }
@@ -152,33 +207,44 @@ export const getStaffLeaveSheets = asyncHandler(async (req, res) => {
 
   const sheets = employees.map((emp) => {
     const cycle = getLeaveCycle(emp.hireDate, asOf);
-    const types = LEAVE_TYPES.filter((type) => isLeaveTypeAllowedForGender(type, emp.gender)).map(
-      (type) => {
-        const ent = cycle.hireDate ? entitlements[type] || 0 : 0;
-        let used = 0;
-        if (cycle.currentCycleStart) {
-          for (const e of entries) {
-            if (String(e.employee) !== String(emp._id)) continue;
-            if (e.leaveType !== type) continue;
-            const start = startOfDay(e.startDate);
-            if (start >= cycle.currentCycleStart && start < cycle.nextAnniversary) {
-              used += Number(e.daysCounted) || 0;
-            }
-          }
-        }
-        used = round2(used);
-        const remaining = cycle.hireDate ? round2(Math.max(0, ent - used)) : 0;
+    const types = LEAVE_TYPES.map((type) => {
+      const allowed = isLeaveTypeAllowedForGender(type, emp.gender);
+      if (!allowed) {
         return {
           leaveType: type,
           label: LEAVE_TYPE_LABELS[type],
-          entitlement: ent,
-          approvedUsed: cycle.hireDate ? used : 0,
-          remaining,
-          balanceStatus: remaining <= 0 && ent > 0 ? 'Used' : 'Available',
-          notes: LEAVE_NOTES[type] || '',
+          entitlement: 0,
+          approvedUsed: 0,
+          remaining: 0,
+          balanceStatus: 'Unavailable',
+          notes: 'Not eligible',
         };
       }
-    );
+
+      const ent = cycle.hireDate ? entitlements[type] || 0 : 0;
+      let used = 0;
+      if (cycle.currentCycleStart) {
+        for (const e of entries) {
+          if (String(e.employee) !== String(emp._id)) continue;
+          if (e.leaveType !== type) continue;
+          const start = startOfDay(e.startDate);
+          if (start >= cycle.currentCycleStart && start < cycle.nextAnniversary) {
+            used += Number(e.daysCounted) || 0;
+          }
+        }
+      }
+      used = round2(used);
+      const remaining = cycle.hireDate ? round2(Math.max(0, ent - used)) : 0;
+      return {
+        leaveType: type,
+        label: LEAVE_TYPE_LABELS[type],
+        entitlement: ent,
+        approvedUsed: cycle.hireDate ? used : 0,
+        remaining,
+        balanceStatus: remaining <= 0 && ent > 0 ? 'Used' : 'Available',
+        notes: LEAVE_NOTES[type] || '',
+      };
+    });
 
     return {
       employeeId: emp._id,
@@ -190,7 +256,9 @@ export const getStaffLeaveSheets = asyncHandler(async (req, res) => {
       nextReset: cycle.nextAnniversary,
       daysToReset: cycle.daysToReset,
       leaveStatus: cycle.status,
-      totalLeaveRemaining: round2(types.reduce((s, t) => s + t.remaining, 0)),
+      totalLeaveRemaining: round2(
+        types.filter((t) => t.balanceStatus !== 'Unavailable').reduce((s, t) => s + t.remaining, 0)
+      ),
       types,
     };
   });
@@ -242,6 +310,8 @@ export const createLeaveEntry = asyncHandler(async (req, res) => {
     overrideDays
   );
 
+  await assertWithinLeaveBalance(emp, leaveType, daysCounted, status);
+
   const entry = await LeaveEntry.create({
     employee,
     leaveType,
@@ -290,6 +360,8 @@ export const updateLeaveEntry = asyncHandler(async (req, res) => {
   if (req.body.overrideDays === null || req.body.overrideDays === '') {
     entry.overrideDays = null;
   }
+
+  await assertWithinLeaveBalance(emp, entry.leaveType, daysCounted, entry.status, entry._id);
 
   await entry.save();
   const populated = await LeaveEntry.findById(entry._id).populate(
@@ -401,6 +473,7 @@ export const downloadLeaveBalance = asyncHandler(async (req, res) => {
   for (const type of LEAVE_TYPES) {
     const t = row.types[type];
     if (!t) continue;
+    if (t.balanceStatus) continue;
     t.balanceStatus = t.left <= 0 && t.entitlement > 0 ? 'Used' : 'Available';
   }
 

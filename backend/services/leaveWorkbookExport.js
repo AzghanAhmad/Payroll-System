@@ -121,8 +121,8 @@ export async function writeLeaveWorkbookExcel(res, { dash, entries, asOf }) {
     ];
     for (const t of TYPE_ORDER) {
       const x = s.types?.[t];
-      if (!x) {
-        values.push('N/A', 'N/A', 'N/A');
+      if (!x || x.balanceStatus === 'Unavailable' || x.available === false) {
+        values.push('—', '—', 'Unavailable');
       } else {
         values.push(x.entitlement ?? 0, x.used ?? 0, x.left ?? 0);
       }
@@ -294,7 +294,9 @@ export function streamLeaveWorkbookPdf(res, { dash, entries, asOf }) {
       String(s.daysToReset ?? ''),
       ...TYPE_ORDER.flatMap((t) => {
         const x = s.types?.[t];
-        if (!x) return ['N/A', 'N/A', 'N/A'];
+        if (!x || x.balanceStatus === 'Unavailable' || x.available === false) {
+          return ['—', '—', 'Unavail.'];
+        }
         return [String(x.entitlement ?? 0), String(x.used ?? 0), String(x.left ?? 0)];
       }),
       s.status || '',

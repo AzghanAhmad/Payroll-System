@@ -28,7 +28,30 @@ const fmtDate = (d) => {
   return x.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+/** Rough Mon–Fri count for client-side balance checks (server also validates with holidays). */
+const countWeekdays = (startStr, endStr) => {
+  if (!startStr || !endStr) return 0;
+  const start = new Date(`${startStr}T00:00:00`);
+  const end = new Date(`${endStr}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count += 1;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+};
+
 const TYPE_ORDER = ['annual', 'sick', 'maternity', 'paternity', 'bereavement'];
+const TYPE_LABELS = {
+  annual: 'Annual Leave',
+  sick: 'Sick Leave',
+  maternity: 'Maternity Leave',
+  paternity: 'Paternity Leave',
+  bereavement: 'Bereavement Leave',
+};
 
 const emptyForm = {
   employee: '',
@@ -153,6 +176,53 @@ export default function LeavePage() {
     }
   }, [form.employee, form.leaveType, availableLeaveTypes]);
 
+  const selectedBalance = useMemo(() => {
+    if (!form.employee || !form.leaveType) return null;
+    const row = (dash?.staff || []).find((s) => String(s.employeeId) === String(form.employee));
+    const t = row?.types?.[form.leaveType];
+    if (!t) return null;
+    let remaining = Number(t.left) || 0;
+    // When editing an approved entry of the same type, remaining already deducted those days — add them back
+    if (editingId) {
+      const existing = entries.find((e) => String(e._id) === String(editingId));
+      if (
+        existing &&
+        existing.status === 'Approved' &&
+        existing.leaveType === form.leaveType &&
+        String(existing.employee?._id || existing.employee) === String(form.employee)
+      ) {
+        remaining += Number(existing.daysCounted) || 0;
+      }
+    }
+    return {
+      remaining: Math.round(remaining * 100) / 100,
+      entitlement: Number(t.entitlement) || 0,
+      used: Number(t.used) || 0,
+      unavailable: t.balanceStatus === 'Unavailable' || t.available === false,
+    };
+  }, [dash, form.employee, form.leaveType, editingId, entries]);
+
+  const estimatedDays = useMemo(() => {
+    if (form.overrideDays !== '' && form.overrideDays != null && !Number.isNaN(Number(form.overrideDays))) {
+      return Number(form.overrideDays);
+    }
+    return countWeekdays(form.startDate, form.endDate);
+  }, [form.startDate, form.endDate, form.overrideDays]);
+
+  const leaveBalanceError = useMemo(() => {
+    if (!form.employee || !form.leaveType || !form.startDate || !form.endDate) return '';
+    if (!['Approved', 'Pending'].includes(form.status)) return '';
+    if (!selectedBalance) return '';
+    const typeLabel = TYPE_LABELS[form.leaveType] || form.leaveType;
+    if (selectedBalance.unavailable) {
+      return `${typeLabel} is unavailable for this employee`;
+    }
+    if (estimatedDays > selectedBalance.remaining) {
+      return `Leave days (${estimatedDays}) exceed remaining ${typeLabel} balance (${selectedBalance.remaining} day(s) left)`;
+    }
+    return '';
+  }, [form, selectedBalance, estimatedDays]);
+
   const invalidateLeave = () => {
     qc.invalidateQueries({ queryKey: ['leave-dashboard'] });
     qc.invalidateQueries({ queryKey: ['leave-entries'] });
@@ -182,6 +252,9 @@ export default function LeavePage() {
 
   const saveMut = useMutation({
     mutationFn: () => {
+      if (leaveBalanceError) {
+        throw { response: { data: { message: leaveBalanceError } } };
+      }
       const payload = {
         ...form,
         overrideDays: form.overrideDays === '' ? null : Number(form.overrideDays),
@@ -357,8 +430,11 @@ export default function LeavePage() {
                         `As of ${asOf}`,
                         ...TYPE_ORDER.map((t) => {
                           const x = row.types?.[t];
-                          if (!x) return `${labels[t] || t}: N/A`;
-                          return `${labels[t] || t}: Ent ${formatNumber(x.entitlement)} · Used ${formatNumber(x.used)} · Left ${formatNumber(x.left)}`;
+                          if (!x || x.balanceStatus === 'Unavailable' || x.available === false) {
+                            return `${labels[t] || t}: Unavailable`;
+                          }
+                          const status = x.balanceStatus === 'Used' || (x.left <= 0 && x.entitlement > 0) ? 'USED' : 'Available';
+                          return `${labels[t] || t}: Ent ${formatNumber(x.entitlement)} · Used ${formatNumber(x.used)} · Left ${formatNumber(x.left)} (${status})`;
                         }),
                         `Total left: ${formatNumber(row.totalLeaveLeft)}`,
                         row.nextAnniversary ? `Next reset: ${fmtDate(row.nextAnniversary)}` : '',
@@ -375,20 +451,27 @@ export default function LeavePage() {
                         <td className="px-2 py-2 text-right">{row.daysToReset}</td>
                         {TYPE_ORDER.map((t) => {
                           const x = row.types?.[t];
-                          if (!x) {
+                          if (!x || x.balanceStatus === 'Unavailable' || x.available === false) {
                             return (
                               <Fragment key={t}>
-                                <td className="px-1 py-2 text-center text-muted bg-slate-50" colSpan={3}>
-                                  N/A
+                                <td className="px-1 py-2 text-center text-slate-500 bg-slate-100" colSpan={3}>
+                                  Unavailable
                                 </td>
                               </Fragment>
                             );
                           }
+                          const usedUp = x.balanceStatus === 'Used' || (x.left <= 0 && x.entitlement > 0);
                           return (
                             <Fragment key={t}>
                               <td className="px-1 py-2 text-right bg-sky-50/50">{formatNumber(x.entitlement)}</td>
                               <td className="px-1 py-2 text-right bg-amber-50/50">{formatNumber(x.used)}</td>
-                              <td className="px-1 py-2 text-right font-semibold bg-emerald-50/50">{formatNumber(x.left)}</td>
+                              <td
+                                className={`px-1 py-2 text-right font-semibold ${
+                                  usedUp ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50/50'
+                                }`}
+                              >
+                                {formatNumber(x.left)}
+                              </td>
                             </Fragment>
                           );
                         })}
@@ -529,6 +612,23 @@ export default function LeavePage() {
                 </div>
               </div>
 
+              {form.employee && selectedBalance && !selectedBalance.unavailable && (
+                <p className="text-xs text-slate-600 bg-slate-50 border border-border rounded-lg px-3 py-2">
+                  Remaining {TYPE_LABELS[form.leaveType] || form.leaveType}:{' '}
+                  <strong>{formatNumber(selectedBalance.remaining)}</strong> day(s)
+                  {form.startDate && form.endDate ? (
+                    <>
+                      {' '}
+                      · This request: <strong>{formatNumber(estimatedDays)}</strong> day(s)
+                    </>
+                  ) : null}
+                </p>
+              )}
+              {leaveBalanceError && (
+                <p className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 font-medium">
+                  {leaveBalanceError}
+                </p>
+              )}
               {form.employee && !selectedEmployee?.gender && (
                 <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   Set this employee&apos;s gender on the Employees page so maternity/paternity leave can be offered correctly.
@@ -554,7 +654,13 @@ export default function LeavePage() {
                 <Button
                   type="button"
                   onClick={() => saveMut.mutate()}
-                  disabled={saveMut.isPending || !form.employee || !form.startDate || !form.endDate}
+                  disabled={
+                    saveMut.isPending ||
+                    !form.employee ||
+                    !form.startDate ||
+                    !form.endDate ||
+                    Boolean(leaveBalanceError)
+                  }
                 >
                   {saveMut.isPending ? 'Saving…' : editingId ? 'Update Entry' : 'Add Entry'}
                 </Button>
@@ -758,43 +864,53 @@ export default function LeavePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sheet.types.map((t) => (
+                        {sheet.types.map((t) => {
+                          const unavailable = t.balanceStatus === 'Unavailable';
+                          const usedUp = t.balanceStatus === 'Used';
+                          return (
                           <tr
                             key={t.leaveType}
                             className={
-                              t.leaveType === 'annual'
-                                ? 'bg-yellow-100'
-                                : t.leaveType === 'sick'
-                                  ? 'text-rose-700'
-                                  : t.leaveType === 'maternity'
-                                    ? 'text-violet-700'
-                                    : t.leaveType === 'paternity'
-                                      ? 'text-blue-700'
-                                      : t.leaveType === 'bereavement'
-                                        ? 'text-orange-700'
-                                        : ''
+                              unavailable
+                                ? 'bg-slate-50 text-slate-500'
+                                : t.leaveType === 'annual'
+                                  ? 'bg-yellow-100'
+                                  : t.leaveType === 'sick'
+                                    ? 'text-rose-700'
+                                    : t.leaveType === 'maternity'
+                                      ? 'text-violet-700'
+                                      : t.leaveType === 'paternity'
+                                        ? 'text-blue-700'
+                                        : t.leaveType === 'bereavement'
+                                          ? 'text-orange-700'
+                                          : ''
                             }
                           >
                             <td className="border border-border py-2.5 px-2 font-medium whitespace-nowrap">{t.label}</td>
                             <td className="border border-border py-2.5 px-2 text-right tabular-nums text-slate-900 bg-slate-50">
-                              {formatNumber(t.entitlement)}
+                              {unavailable ? '—' : formatNumber(t.entitlement)}
                             </td>
                             <td className="border border-border py-2.5 px-2 text-right tabular-nums text-slate-900 bg-slate-50">
-                              {formatNumber(t.approvedUsed)}
+                              {unavailable ? '—' : formatNumber(t.approvedUsed)}
                             </td>
                             <td className="border border-border py-2.5 px-2 text-right font-semibold tabular-nums text-slate-900 bg-slate-50">
-                              {formatNumber(t.remaining)}
+                              {unavailable ? '—' : formatNumber(t.remaining)}
                             </td>
                             <td
-                              className={`border border-border py-2.5 px-2 text-center whitespace-nowrap ${
-                                t.balanceStatus === 'Used' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
+                              className={`border border-border py-2.5 px-2 text-center font-semibold whitespace-nowrap ${
+                                unavailable
+                                  ? 'bg-slate-200 text-slate-600'
+                                  : usedUp
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : 'bg-emerald-50 text-emerald-700'
                               }`}
                             >
-                              {t.balanceStatus}
+                              {unavailable ? 'Unavailable' : usedUp ? 'USED' : t.balanceStatus}
                             </td>
                             <td className="border border-border py-2.5 px-2 text-muted text-slate-600">{t.notes}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

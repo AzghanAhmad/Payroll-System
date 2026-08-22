@@ -238,65 +238,356 @@ export async function writeNpfSheetExcel(res, { year, month, employer, period, n
 export function streamNpfSheetPdf(res, { year, month, employer, period, npf }) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const filename = `NPF_${months[month - 1]}_${year}.pdf`;
-  const doc = new PDFDocument({ size: 'A3', layout: 'landscape', margin: 30 });
+  const doc = new PDFDocument({ size: 'A3', layout: 'landscape', margin: 24 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   doc.pipe(res);
 
-  doc.fontSize(16).font('Helvetica-Bold').fillColor('#0F172A')
-    .text('SAMOA NATIONAL PROVIDENT FUND', { align: 'center' });
-  doc.moveDown(0.6);
-
-  doc.fontSize(9).font('Helvetica');
-  doc.text(`EMPLOYER NUMBER: ${employer?.npfEmployerNumber || '—'}`);
-  doc.text(`EMPLOYER NAME: ${employer?.companyName || '—'}`);
-  doc.text(`EMAIL/ADDRESS: ${employer?.companyAddress || employer?.companyEmail || '—'}`);
-  doc.text(`TELEPHONE: ${employer?.companyPhone || '—'}    ZONE: ${employer?.npfZone || '—'}`);
-  doc.moveDown(0.3);
-  doc.text(`Period Start: ${fmtDate(period?.start)}    Period End: ${fmtDate(period?.end)}`);
-  doc.text(`Schedule Frequency: ${period?.frequency || 'Monthly'}    Payments Total: ${round2(npf?.paymentsTotal || 0)}`);
-  doc.moveDown(0.5);
-
+  const left = 24;
+  const pageW = doc.page.width - 48;
   const rows = npf?.rows || [];
-  const headers = ['NPF #', 'Employee', 'Type', 'Code', '1 Emp', '1 Er', '2 Emp', '2 Er', '3 Emp', '3 Er', '4 Emp', '4 Er', '5 Emp', '5 Er', 'TOTAL'];
-  const pageW = doc.page.width - 60;
-  const colW = pageW / headers.length;
-  let y = doc.y;
-  doc.rect(30, y, pageW, 16).fill(`#${HEADER_BLUE}`);
-  doc.fillColor('#FFFFFF').fontSize(7).font('Helvetica-Bold');
-  headers.forEach((h, i) => doc.text(h, 30 + i * colW, y + 4, { width: colW - 2, align: 'center' }));
-  y += 18;
+  const loans = npf?.loanRepayments?.length
+    ? npf.loanRepayments
+    : [{ accountNumber: '—', name: '—', weeks: [0, 0, 0, 0, 0], total: 0 }];
+  const vols = npf?.voluntary?.length
+    ? npf.voluntary
+    : [{ npfNumber: '—', name: '—', transactionType: 'Voluntary-Self', weeks: [0, 0, 0, 0, 0], total: 0 }];
 
-  doc.font('Helvetica').fontSize(7).fillColor('#334155');
-  for (const r of rows) {
-    if (y > doc.page.height - 80) {
-      doc.addPage();
-      y = 40;
+  const cell = (text, x, y, w, h, opts = {}) => {
+    const {
+      fill = null,
+      stroke = '#94A3B8',
+      color = '#0F172A',
+      fontSize = 7,
+      bold = false,
+      align = 'left',
+    } = opts;
+    if (fill) doc.rect(x, y, w, h).fillAndStroke(fill, stroke);
+    else doc.rect(x, y, w, h).stroke(stroke);
+    doc
+      .fillColor(color)
+      .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(fontSize)
+      .text(String(text ?? ''), x + 2, y + Math.max(2, (h - fontSize) / 2 - 1), {
+        width: w - 4,
+        align,
+        lineBreak: false,
+        ellipsis: true,
+      });
+  };
+
+  const ensureWeeks = (r) => {
+    const weeks = [...(r.weeks || [])];
+    while (weeks.length < 5) weeks.push({ employee: 0, employer: 0 });
+    return weeks.slice(0, 5).map((w) =>
+      typeof w === 'object' && w !== null && ('employee' in w || 'employer' in w)
+        ? { employee: Number(w.employee) || 0, employer: Number(w.employer) || 0 }
+        : { employee: Number(w) || 0, employer: 0 }
+    );
+  };
+
+  // Title
+  let y = 22;
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(16)
+    .fillColor('#0F172A')
+    .text('SAMOA NATIONAL PROVIDENT FUND', left, y, {
+      width: pageW,
+      align: 'center',
+      lineBreak: false,
+    });
+  y += 22;
+
+  // Employer header block (two columns)
+  const info = [
+    ['EMPLOYER NO:', employer?.npfEmployerNumber || '—'],
+    ['EMPLOYER NAME:', employer?.companyName || '—'],
+    ['EMAIL/ADDRESS:', employer?.companyAddress || employer?.companyEmail || '—'],
+    ['TELEPHONE:', employer?.companyPhone || '—'],
+    ['ZONE:', employer?.npfZone || '—'],
+  ];
+  const periodInfo = [
+    ['Period Start:', fmtDate(period?.start)],
+    ['Period End:', fmtDate(period?.end)],
+    ['Schedule Freq:', period?.frequency || 'Monthly'],
+    ['Payments Tot:', round2(npf?.paymentsTotal || 0)],
+  ];
+  const infoStart = y;
+  info.forEach(([lab, val], i) => {
+    const iy = infoStart + i * 12;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#0F172A').text(lab, left, iy, { lineBreak: false });
+    doc.font('Helvetica').text(String(val), left + 100, iy, { width: 280, lineBreak: false, ellipsis: true });
+  });
+  periodInfo.forEach(([lab, val], i) => {
+    const iy = infoStart + i * 12;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#0F172A').text(lab, left + pageW * 0.55, iy, {
+      lineBreak: false,
+    });
+    doc.font('Helvetica').text(String(val), left + pageW * 0.55 + 90, iy, { lineBreak: false });
+  });
+  y = infoStart + 5 * 12 + 10;
+
+  // Main contribution table columns
+  // NPF# | Name | Type | Code | 5×(Emp,Er) | TOTAL  = 15 cols
+  const base = [pageW * 0.07, pageW * 0.14, pageW * 0.1, pageW * 0.07];
+  const weekW = (pageW - base.reduce((s, n) => s + n, 0)) / 11;
+  const widths = [...base, ...Array.from({ length: 10 }, () => weekW), weekW];
+  const xAt = (i) => left + widths.slice(0, i).reduce((s, w) => s + w, 0);
+
+  const h1 = 14;
+  const h2 = 12;
+
+  // Header row 1
+  ['NPF #', 'EMPLOYEE NAME', 'TRANSACTION TYPE', 'Transaction Code'].forEach((h, i) => {
+    cell(h, xAt(i), y, widths[i], h1 + h2, {
+      fill: `#${HEADER_BLUE}`,
+      stroke: `#${HEADER_BLUE}`,
+      color: '#FFFFFF',
+      bold: true,
+      align: 'center',
+      fontSize: 7,
+    });
+  });
+  for (let w = 0; w < 5; w++) {
+    const cx = xAt(4 + w * 2);
+    const ww = widths[4 + w * 2] + widths[5 + w * 2];
+    cell(String(w + 1), cx, y, ww, h1, {
+      fill: `#${HEADER_BLUE}`,
+      stroke: `#${HEADER_BLUE}`,
+      color: '#FFFFFF',
+      bold: true,
+      align: 'center',
+      fontSize: 8,
+    });
+  }
+  cell('TOTAL', xAt(14), y, widths[14], h1 + h2, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 8,
+  });
+  y += h1;
+
+  // Header row 2 — Employee / Employer
+  for (let w = 0; w < 5; w++) {
+    cell('Employee', xAt(4 + w * 2), y, widths[4 + w * 2], h2, {
+      fill: '#DBEAFE',
+      bold: true,
+      align: 'center',
+      fontSize: 6.5,
+    });
+    cell('Employer', xAt(5 + w * 2), y, widths[5 + w * 2], h2, {
+      fill: '#DBEAFE',
+      bold: true,
+      align: 'center',
+      fontSize: 6.5,
+    });
+  }
+  y += h2;
+
+  const rowH = 12;
+  const weekTotals = Array.from({ length: 10 }, () => 0);
+  let grand = 0;
+
+  const drawMainHeader = () => {
+    ['NPF #', 'EMPLOYEE NAME', 'TYPE', 'Code'].forEach((h, i) => {
+      cell(h, xAt(i), y, widths[i], 12, {
+        fill: `#${HEADER_BLUE}`,
+        stroke: `#${HEADER_BLUE}`,
+        color: '#FFFFFF',
+        bold: true,
+        align: 'center',
+        fontSize: 6.5,
+      });
+    });
+    for (let i = 4; i < 14; i++) {
+      cell(i % 2 === 0 ? 'Emp' : 'Er', xAt(i), y, widths[i], 12, {
+        fill: `#${HEADER_BLUE}`,
+        stroke: `#${HEADER_BLUE}`,
+        color: '#FFFFFF',
+        bold: true,
+        align: 'center',
+        fontSize: 6,
+      });
     }
+    cell('TOTAL', xAt(14), y, widths[14], 12, {
+      fill: `#${HEADER_BLUE}`,
+      stroke: `#${HEADER_BLUE}`,
+      color: '#FFFFFF',
+      bold: true,
+      align: 'center',
+      fontSize: 6.5,
+    });
+    y += 12;
+  };
+
+  for (const r of rows) {
+    if (y > doc.page.height - 160) {
+      doc.addPage();
+      y = 28;
+      drawMainHeader();
+    }
+    const weeks = ensureWeeks(r);
     const vals = [
       r.npfNumber || '',
       r.name || '',
       r.transactionType || 'Compulsory',
       r.transactionCode || '',
-      ...(r.weeks || []).flatMap((w) => [String(money(w.employee)), String(money(w.employer))]),
-      String(money(r.total)),
+      ...weeks.flatMap((w) => [money(w.employee), money(w.employer)]),
+      money(r.total),
     ];
-    while (vals.length < 15) vals.splice(vals.length - 1, 0, '-');
-    vals.forEach((v, i) => doc.text(v, 30 + i * colW, y, { width: colW - 2, align: i < 3 ? 'left' : 'right', ellipsis: true }));
-    y += 11;
+    vals.forEach((v, i) => {
+      cell(v, xAt(i), y, widths[i], rowH, {
+        align: i < 4 ? (i === 0 || i === 1 ? 'left' : 'center') : 'right',
+        fontSize: 7,
+      });
+    });
+    weeks.forEach((w, wi) => {
+      weekTotals[wi * 2] += Number(w.employee) || 0;
+      weekTotals[wi * 2 + 1] += Number(w.employer) || 0;
+    });
+    grand += Number(r.total) || 0;
+    y += rowH;
   }
 
-  y += 4;
-  doc.font('Helvetica-Bold').fillColor('#0F172A')
-    .text(`TOTAL CONTRIBUTIONS: ${round2(npf?.paymentsTotal || 0)}`, 30, y);
-  y += 20;
-  doc.fontSize(10).text('Loan Repayments', 30, y);
-  y += 12;
-  doc.fontSize(8).font('Helvetica').fillColor('#64748B').text('(none recorded)', 30, y);
+  // TOTAL CONTRIBUTIONS
+  cell('TOTAL CONTRIBUTIONS', xAt(0), y, widths[0] + widths[1] + widths[2] + widths[3], rowH + 2, {
+    fill: '#E0E7FF',
+    bold: true,
+    fontSize: 8,
+  });
+  weekTotals.forEach((v, i) => {
+    cell(round2(v), xAt(4 + i), y, widths[4 + i], rowH + 2, {
+      fill: '#E0E7FF',
+      bold: true,
+      align: 'right',
+      fontSize: 7,
+    });
+  });
+  cell(round2(grand || npf?.paymentsTotal || 0), xAt(14), y, widths[14], rowH + 2, {
+    fill: '#E0E7FF',
+    bold: true,
+    align: 'right',
+    fontSize: 8,
+  });
+  y += rowH + 16;
+
+  // Loan Repayments
+  if (y > doc.page.height - 100) {
+    doc.addPage();
+    y = 28;
+  }
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0F172A').text('Loan Repayments', left, y, {
+    lineBreak: false,
+  });
   y += 16;
-  doc.fontSize(10).font('Helvetica-Bold').fillColor('#0F172A').text('Voluntary payments', 30, y);
-  y += 12;
-  doc.fontSize(8).font('Helvetica').fillColor('#64748B').text('(none recorded)', 30, y);
+
+  // Loan cols: Account | Name | 1 2 3 4 5 (each can be single amount) | TOTAL
+  // Match Excel: Account, Name, weeks 1-5 (merged emp/er style as single week cols), TOTAL
+  const loanW = [
+    pageW * 0.12,
+    pageW * 0.18,
+    pageW * 0.12,
+    pageW * 0.12,
+    pageW * 0.12,
+    pageW * 0.12,
+    pageW * 0.12,
+    pageW * 0.1,
+  ];
+  const lx = (i) => left + loanW.slice(0, i).reduce((s, w) => s + w, 0);
+  ['Account Number', 'Employee Name', '1', '2', '3', '4', '5', 'TOTAL'].forEach((h, i) => {
+    cell(h, lx(i), y, loanW[i], 14, {
+      fill: '#DBEAFE',
+      bold: true,
+      align: 'center',
+      fontSize: 7,
+    });
+  });
+  y += 14;
+  for (const loan of loans) {
+    const weekVals = Array.isArray(loan.weeks)
+      ? loan.weeks.map((w) => (typeof w === 'object' ? Number(w.employee || w.amount || 0) : Number(w) || 0))
+      : [0, 0, 0, 0, 0];
+    while (weekVals.length < 5) weekVals.push(0);
+    const loanTotal =
+      loan.total != null
+        ? Number(loan.total) || 0
+        : weekVals.reduce((s, n) => s + n, 0);
+    const vals = [
+      loan.accountNumber || '—',
+      loan.name || '—',
+      ...weekVals.map((n) => (n ? round2(n) : '—')),
+      loanTotal ? round2(loanTotal) : '—',
+    ];
+    vals.forEach((v, i) => {
+      cell(v, lx(i), y, loanW[i], rowH, {
+        align: i < 2 ? 'left' : 'right',
+        fontSize: 7,
+      });
+    });
+    y += rowH;
+  }
+
+  y += 14;
+
+  // Voluntary payments
+  if (y > doc.page.height - 90) {
+    doc.addPage();
+    y = 28;
+  }
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0F172A').text('Voluntary payments', left, y, {
+    lineBreak: false,
+  });
+  y += 16;
+
+  const volW = [
+    pageW * 0.1,
+    pageW * 0.16,
+    pageW * 0.12,
+    pageW * 0.1,
+    pageW * 0.1,
+    pageW * 0.1,
+    pageW * 0.1,
+    pageW * 0.1,
+    pageW * 0.12,
+  ];
+  const vx = (i) => left + volW.slice(0, i).reduce((s, w) => s + w, 0);
+  ['NPF NUMBER', 'Employee Name', 'Transaction Type', '1', '2', '3', '4', '5', 'TOTAL'].forEach(
+    (h, i) => {
+      cell(h, vx(i), y, volW[i], 14, {
+        fill: '#DBEAFE',
+        bold: true,
+        align: 'center',
+        fontSize: 7,
+      });
+    }
+  );
+  y += 14;
+  for (const v of vols) {
+    const weekVals = Array.isArray(v.weeks)
+      ? v.weeks.map((w) => (typeof w === 'object' ? Number(w.employee || w.amount || 0) : Number(w) || 0))
+      : [0, 0, 0, 0, 0];
+    while (weekVals.length < 5) weekVals.push(0);
+    const volTotal =
+      v.total != null ? Number(v.total) || 0 : weekVals.reduce((s, n) => s + n, 0);
+    const vals = [
+      v.npfNumber || '—',
+      v.name || '—',
+      v.transactionType || 'Voluntary-Self',
+      ...weekVals.map((n) => (n ? round2(n) : '—')),
+      volTotal ? round2(volTotal) : '—',
+    ];
+    vals.forEach((val, i) => {
+      cell(val, vx(i), y, volW[i], rowH, {
+        align: i < 3 ? 'left' : 'right',
+        fontSize: 7,
+      });
+    });
+    y += rowH;
+  }
 
   doc.end();
 }

@@ -309,7 +309,7 @@ export async function writePayeSheetExcel(res, { year, month, employer, paye }) 
 
 export function streamPayeSheetPdf(res, { year, month, employer, paye }) {
   const filename = `PAYE_P4_${MONTH_SHORT[month - 1]}_${year}.pdf`;
-  const doc = new PDFDocument({ size: 'A3', layout: 'landscape', margin: 28 });
+  const doc = new PDFDocument({ size: 'A3', layout: 'landscape', margin: 24 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   doc.pipe(res);
@@ -318,109 +318,415 @@ export function streamPayeSheetPdf(res, { year, month, employer, paye }) {
   const summary = paye?.summary || {};
   const totals = paye?.totals || {};
   const monthLabel = `${MONTH_SHORT[month - 1]}-${String(year).slice(-2)}`;
-  const pageW = doc.page.width - 56;
+  const left = 24;
+  const pageW = doc.page.width - 48;
 
-  doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E3A5F')
-    .text('MINISTRY OF CUSTOMS AND REVENUE — SAMOA', 28, 28, { width: pageW - 60, align: 'center' });
-  doc.fontSize(14).text('SALARY & WAGE TAX AND SOURCE DEDUCTION PAYMENT RECORDS', { align: 'center' });
-  doc.fontSize(9).font('Helvetica-Oblique').fillColor('#64748B').text('Tax Administration Act 2012', { align: 'center' });
-  doc.fontSize(18).font('Helvetica-Bold').fillColor('#1E3A5F').text('P4', doc.page.width - 70, 28, { width: 40 });
+  const cell = (text, x, y, w, h, opts = {}) => {
+    const {
+      fill = null,
+      stroke = '#94A3B8',
+      color = '#0F172A',
+      fontSize = 7,
+      bold = false,
+      align = 'left',
+    } = opts;
+    if (fill) doc.rect(x, y, w, h).fillAndStroke(fill, stroke);
+    else doc.rect(x, y, w, h).stroke(stroke);
+    doc
+      .fillColor(color)
+      .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(fontSize)
+      .text(String(text ?? ''), x + 2, y + Math.max(2, (h - fontSize) / 2 - 1), {
+        width: w - 4,
+        align,
+        lineBreak: false,
+        ellipsis: true,
+      });
+  };
 
-  doc.moveDown(0.4);
-  doc.fontSize(7).font('Helvetica-Bold').fillColor('#0F172A')
+  // Title
+  let y = 22;
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(11)
+    .fillColor('#1E3A5F')
+    .text('MINISTRY OF CUSTOMS AND REVENUE — SAMOA', left, y, {
+      width: pageW - 50,
+      align: 'center',
+      lineBreak: false,
+    });
+  doc
+    .fontSize(22)
+    .text('P4', left + pageW - 42, y - 2, { width: 42, align: 'center', lineBreak: false });
+  y += 16;
+  doc
+    .fontSize(13)
+    .text('SALARY & WAGE TAX AND SOURCE DEDUCTION PAYMENT RECORDS', left, y, {
+      width: pageW - 50,
+      align: 'center',
+      lineBreak: false,
+    });
+  y += 16;
+  doc
+    .font('Helvetica-Oblique')
+    .fontSize(9)
+    .fillColor('#64748B')
+    .text('Tax Administration Act 2012', left, y, {
+      width: pageW - 50,
+      align: 'center',
+      lineBreak: false,
+    });
+  y += 14;
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(7)
+    .fillColor('#0F172A')
     .text(
       'FILL IN THIS FORM MONTHLY AND SUBMIT TOGETHER WITH PAYMENT TO THE INLAND REVENUE SERVICES WITHIN 15 DAYS FROM THE END OF EACH MONTH.',
-      { align: 'center' }
+      left,
+      y,
+      { width: pageW, align: 'center', lineBreak: false }
     );
-  doc.moveDown(0.4);
-  doc.fontSize(8).font('Helvetica');
-  doc.text(`Payer / Employer Name: ${employer?.companyName || '—'}     Tax ID: ${employer?.taxIdentificationNumber || '—'}     Month: ${monthLabel}`);
-  doc.text(`Address: ${employer?.companyAddress || '—'}`);
-  doc.moveDown(0.3);
+  y += 14;
 
-  const headers = [
-    'Employee', 'NPF #', 'Period', 'Sal 1', 'Sal 2', 'Sal 3', 'TOTAL',
-    'Tax 1', 'Tax 2', 'Tax 3', 'TOTAL TAX', 'NPF', 'ACC',
+  // Employer meta row
+  const metaH = 18;
+  const metaParts = [
+    { label: 'Payer / Employer Name', value: employer?.companyName || '—', w: pageW * 0.34 },
+    { label: 'Tax ID', value: employer?.taxIdentificationNumber || '—', w: pageW * 0.16 },
+    { label: 'Month', value: monthLabel, w: pageW * 0.12 },
+    { label: 'Address', value: employer?.companyAddress || '—', w: pageW * 0.38 },
   ];
-  const colW = pageW / headers.length;
-  let y = doc.y;
-  doc.rect(28, y, pageW, 16).fill(`#${HEADER_BLUE}`);
-  doc.fillColor('#FFFFFF').fontSize(6.5).font('Helvetica-Bold');
-  headers.forEach((h, i) => doc.text(h, 28 + i * colW, y + 4, { width: colW - 2, align: 'center' }));
-  y += 18;
+  let mx = left;
+  metaParts.forEach((p) => {
+    const lw = Math.min(110, p.w * 0.45);
+    cell(p.label, mx, y, lw, metaH, { fill: '#DBEAFE', bold: true, fontSize: 7 });
+    cell(p.value, mx + lw, y, p.w - lw, metaH, { fill: '#DCFCE7', fontSize: 8, bold: true });
+    mx += p.w;
+  });
+  y += metaH + 8;
+
+  // Column widths matching P4
+  // Name | NPF | Period | Sal1 Sal2 Sal3 TOTAL | Tax1 Tax2 Tax3 TOTAL TAX | NPF | ACC
+  const cols = [
+    { w: pageW * 0.14, align: 'left' },
+    { w: pageW * 0.07, align: 'center' },
+    { w: pageW * 0.07, align: 'center' },
+    { w: pageW * 0.06, align: 'right' },
+    { w: pageW * 0.06, align: 'right' },
+    { w: pageW * 0.06, align: 'right' },
+    { w: pageW * 0.07, align: 'right' },
+    { w: pageW * 0.06, align: 'right' },
+    { w: pageW * 0.06, align: 'right' },
+    { w: pageW * 0.06, align: 'right' },
+    { w: pageW * 0.075, align: 'right' },
+    { w: pageW * 0.065, align: 'right' },
+    { w: pageW * 0.065, align: 'right' },
+  ];
+  // normalize widths to pageW
+  const colSum = cols.reduce((s, c) => s + c.w, 0);
+  cols.forEach((c) => {
+    c.w = (c.w / colSum) * pageW;
+  });
+  const colX = (i) => left + cols.slice(0, i).reduce((s, c) => s + c.w, 0);
+
+  const h1 = 14;
+  const h2 = 12;
+  const h3 = 12;
+
+  // Header row 1
+  cell('NAME OF EMPLOYEES', colX(0), y, cols[0].w, h1 + h2 + h3, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 7,
+  });
+  cell('NPF Number', colX(1), y, cols[1].w, h1 + h2 + h3, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 7,
+  });
+  cell('PAY PERIOD', colX(2), y, cols[2].w, h1 + h2 + h3, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 7,
+  });
+  cell('SALARY & WAGE / SOURCE DEDUCTION PAYMENTS', colX(3), y, cols[3].w + cols[4].w + cols[5].w + cols[6].w, h1, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 7,
+  });
+  cell('TAX DEDUCTIONS', colX(7), y, cols[7].w + cols[8].w + cols[9].w + cols[10].w, h1, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 7,
+  });
+  cell('NPF (9%)', colX(11), y, cols[11].w, h1 + h2 + h3, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 7,
+  });
+  cell('ACC (1%)', colX(12), y, cols[12].w, h1 + h2 + h3, {
+    fill: `#${HEADER_BLUE}`,
+    stroke: `#${HEADER_BLUE}`,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 7,
+  });
+  y += h1;
+
+  // Header row 2
+  cell('PAY PERIODS OF THE MONTH', colX(3), y, cols[3].w + cols[4].w + cols[5].w + cols[6].w, h2, {
+    fill: '#166534',
+    stroke: '#166534',
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 6.5,
+  });
+  cell('PAY PERIODS OF THE MONTH', colX(7), y, cols[7].w + cols[8].w + cols[9].w + cols[10].w, h2, {
+    fill: '#9F1239',
+    stroke: '#9F1239',
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    fontSize: 6.5,
+  });
+  y += h2;
+
+  // Header row 3
+  ['1', '2', '3', 'TOTAL'].forEach((h, i) => {
+    cell(h, colX(3 + i), y, cols[3 + i].w, h3, {
+      fill: `#${GREEN}`,
+      bold: true,
+      align: 'center',
+      fontSize: 7,
+    });
+  });
+  ['1', '2', '3', 'TOTAL TAX'].forEach((h, i) => {
+    cell(h, colX(7 + i), y, cols[7 + i].w, h3, {
+      fill: `#${PINK}`,
+      bold: true,
+      align: 'center',
+      fontSize: 7,
+    });
+  });
+  y += h3;
 
   let sumGross = 0;
   let sumTax = 0;
-  doc.font('Helvetica').fontSize(6.5).fillColor('#334155');
+  let sumNpf = 0;
+  let sumAcc = 0;
+  let sumP1 = 0;
+  let sumP2 = 0;
+  let sumP3 = 0;
+  let sumT1 = 0;
+  let sumT2 = 0;
+  let sumT3 = 0;
+  const rowH = 13;
+
+  const drawHeaderOnPage = () => {
+    // compact header repeat on new pages
+    const labels = [
+      'Employee',
+      'NPF #',
+      'Period',
+      'Sal 1',
+      'Sal 2',
+      'Sal 3',
+      'TOTAL',
+      'Tax 1',
+      'Tax 2',
+      'Tax 3',
+      'TOTAL TAX',
+      'NPF',
+      'ACC',
+    ];
+    labels.forEach((h, i) => {
+      cell(h, colX(i), y, cols[i].w, 14, {
+        fill: `#${HEADER_BLUE}`,
+        stroke: `#${HEADER_BLUE}`,
+        color: '#FFFFFF',
+        bold: true,
+        align: 'center',
+        fontSize: 6.5,
+      });
+    });
+    y += 14;
+  };
+
   for (const r of rows) {
-    if (y > doc.page.height - 120) {
+    if (y > doc.page.height - 110) {
       doc.addPage();
-      y = 40;
+      y = 28;
+      drawHeaderOnPage();
     }
     const vals = [
       r.name || '',
       r.npfNumber || '',
       r.payPeriod || 'Fortnightly',
-      String(money(r.payPeriod1)),
-      String(money(r.payPeriod2)),
-      String(money(r.payPeriod3)),
-      String(money(r.grossTotal)),
-      String(money(r.taxPeriod1)),
-      String(money(r.taxPeriod2)),
-      String(money(r.taxPeriod3)),
-      String(money(r.totalTax)),
-      String(money(r.npfTotal)),
-      String(money(r.accTotal)),
+      money(r.payPeriod1),
+      money(r.payPeriod2),
+      money(r.payPeriod3),
+      money(r.grossTotal),
+      money(r.taxPeriod1),
+      money(r.taxPeriod2),
+      money(r.taxPeriod3),
+      money(r.totalTax),
+      money(r.npfTotal),
+      money(r.accTotal),
     ];
-    vals.forEach((v, i) =>
-      doc.text(v, 28 + i * colW, y, { width: colW - 2, align: i < 3 ? 'left' : 'right', ellipsis: true })
-    );
+    vals.forEach((v, i) => {
+      let fill = '#FFFFFF';
+      if (i >= 3 && i <= 6) fill = `#${GREEN}`;
+      else if (i >= 7 && i <= 10) fill = `#${PINK}`;
+      cell(v, colX(i), y, cols[i].w, rowH, {
+        fill,
+        align: cols[i].align,
+        fontSize: 7,
+        bold: i === 6 || i === 10,
+      });
+    });
+    sumP1 += Number(r.payPeriod1) || 0;
+    sumP2 += Number(r.payPeriod2) || 0;
+    sumP3 += Number(r.payPeriod3) || 0;
     sumGross += Number(r.grossTotal) || 0;
+    sumT1 += Number(r.taxPeriod1) || 0;
+    sumT2 += Number(r.taxPeriod2) || 0;
+    sumT3 += Number(r.taxPeriod3) || 0;
     sumTax += Number(r.totalTax) || 0;
-    y += 10;
+    sumNpf += Number(r.npfTotal) || 0;
+    sumAcc += Number(r.accTotal) || 0;
+    y += rowH;
   }
 
-  y += 4;
-  doc.font('Helvetica-Bold').fillColor('#0F172A')
-    .text(
-      `TOTAL Gross: ${money(totals.gross ?? sumGross)}    TOTAL Tax: ${money(totals.tax ?? sumTax)}    NPF: ${money(totals.npf || 0)}    ACC: ${money(totals.acc || 0)}`,
-      28,
-      y,
-      { width: pageW }
-    );
-  y += 16;
-  doc.font('Helvetica').fontSize(8)
-    .text(
-      `Previous periods: ${money(summary.previousGross)}   This month: ${money(summary.thisMonthGross ?? sumGross)}   YTD: ${money(summary.yearToDateGross)}   Tax paid: ${money(summary.taxPaidThisMonth ?? sumTax)}`,
-      28,
-      y,
-      { width: pageW * 0.65 }
-    );
-  doc.rect(28 + pageW * 0.68, y - 2, pageW * 0.3, 22).fillAndStroke('#DCFCE7', '#86EFAC');
-  doc.fillColor('#14532D').font('Helvetica-Bold').fontSize(10)
-    .text(`Total Tax to Pay $ ${money(summary.totalTaxToPay ?? sumTax)}`, 28 + pageW * 0.68 + 6, y + 4, {
-      width: pageW * 0.3 - 12,
+  // Totals row
+  const totVals = [
+    'TOTAL',
+    '',
+    '',
+    money(sumP1),
+    money(sumP2),
+    money(sumP3),
+    money(totals.gross ?? sumGross),
+    money(sumT1),
+    money(sumT2),
+    money(sumT3),
+    money(totals.tax ?? sumTax),
+    money(totals.npf ?? sumNpf),
+    money(totals.acc ?? sumAcc),
+  ];
+  totVals.forEach((v, i) => {
+    cell(v, colX(i), y, cols[i].w, rowH + 2, {
+      fill: '#E2E8F0',
+      bold: true,
+      align: cols[i].align,
+      fontSize: 7,
+    });
+  });
+  y += rowH + 10;
+
+  if (y > doc.page.height - 100) {
+    doc.addPage();
+    y = 28;
+  }
+
+  // Summary block
+  const summaryW = pageW * 0.55;
+  const boxW = pageW * 0.28;
+  const lines = [
+    ['PREVIOUS PERIODS', money(summary.previousGross)],
+    ['THIS MONTH', money(summary.thisMonthGross ?? sumGross)],
+    ['TOTAL YEAR TO DATE', money(summary.yearToDateGross)],
+    ['TAX PAID THIS MONTH', money(summary.taxPaidThisMonth ?? sumTax)],
+  ];
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#0F172A').text('TOTAL GROSS PAY FROM', left, y, {
+    lineBreak: false,
+  });
+  y += 12;
+  lines.forEach(([lab, val]) => {
+    cell(lab, left, y, summaryW * 0.45, 16, { fill: '#F1F5F9', bold: true, fontSize: 8 });
+    cell(val, left + summaryW * 0.45, y, summaryW * 0.25, 16, {
+      fill: '#FFFFFF',
+      align: 'right',
+      bold: true,
+      fontSize: 8,
+    });
+    y += 16;
+  });
+
+  const taxY = y - 64;
+  doc
+    .rect(left + pageW - boxW, taxY, boxW, 56)
+    .fillAndStroke('#DCFCE7', '#86EFAC');
+  doc
+    .fillColor('#14532D')
+    .font('Helvetica-Bold')
+    .fontSize(10)
+    .text('Total Tax to Pay $', left + pageW - boxW + 8, taxY + 10, {
+      width: boxW - 16,
+      align: 'center',
+      lineBreak: false,
+    });
+  doc
+    .fontSize(16)
+    .text(String(money(summary.totalTaxToPay ?? sumTax)), left + pageW - boxW + 8, taxY + 28, {
+      width: boxW - 16,
+      align: 'center',
+      lineBreak: false,
     });
 
-  y += 30;
-  doc.fillColor('#475569').fontSize(7).font('Helvetica-Oblique')
+  y += 10;
+  doc
+    .fillColor('#475569')
+    .font('Helvetica-Oblique')
+    .fontSize(7)
     .text(
       'I solemnly declare that the information provided in this form are true and correct; and I understand that any misleading or false information is an offence under the Tax Administration Act 2012.',
-      28,
+      left,
       y,
       { width: pageW }
     );
   y += 18;
-  doc.font('Helvetica').fontSize(8).fillColor('#0F172A')
+  cell('SIGNATURE OF EMPLOYER', left, y, 130, 18, { fill: '#DBEAFE', bold: true, fontSize: 8 });
+  cell(employer?.digitalSignature || employer?.companyName || '—', left + 130, y, 220, 18, {
+    fill: '#DCFCE7',
+    fontSize: 8,
+  });
+  cell('DESIGNATION', left + 360, y, 90, 18, { fill: '#DBEAFE', bold: true, fontSize: 8 });
+  cell(summary.designation || employer?.companyEmail || '—', left + 450, y, 200, 18, {
+    fill: '#DCFCE7',
+    fontSize: 8,
+  });
+  y += 24;
+  doc
+    .fillColor('#94A3B8')
+    .font('Helvetica')
+    .fontSize(7)
     .text(
-      `Signature of Employer: ${employer?.digitalSignature || employer?.companyName || '—'}     Designation: ${summary.designation || employer?.companyEmail || '—'}`,
-      28,
+      'You can now file your PAYE, VAGST and Income Tax Returns Online. Register for Samoa eTax at set.revenue.gov.ws',
+      left,
       y,
-      { width: pageW }
+      { width: pageW, lineBreak: false }
     );
-  y += 14;
-  doc.fillColor('#94A3B8').fontSize(7)
-    .text('You can now file your PAYE, VAGST and Income Tax Returns Online. Register for Samoa eTax at set.revenue.gov.ws', 28, y);
 
   doc.end();
 }

@@ -141,8 +141,14 @@ export default function DashboardPage() {
                             {formatNumber(row.remaining)}
                           </td>
                           <td className="py-2.5 pl-3">
-                            <span className={row.remaining <= 0 && row.entitlement > 0 ? 'text-rose-700' : 'text-emerald-700'}>
-                              {row.remaining <= 0 && row.entitlement > 0 ? 'Used' : 'Available'}
+                            <span
+                              className={
+                                row.remaining <= 0 && row.entitlement > 0
+                                  ? 'font-semibold text-rose-700'
+                                  : 'font-semibold text-emerald-700'
+                              }
+                            >
+                              {row.remaining <= 0 && row.entitlement > 0 ? 'USED' : 'Available'}
                             </span>
                           </td>
                         </tr>
