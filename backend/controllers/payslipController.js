@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { ZipArchive } from 'archiver';
 import Payslip from '../models/Payslip.js';
-import { asyncHandler } from '../utils/helpers.js';
+import { asyncHandler, round2 } from '../utils/helpers.js';
 import { AppError } from '../middleware/errorMiddleware.js';
 import {
   generatePayslipPdf,
@@ -175,6 +175,103 @@ export const deletePayslip = asyncHandler(async (req, res) => {
   res.json({
     message: `Payslip deleted for ${payslip.employee?.fullName || 'employee'}`,
   });
+});
+
+const EDITABLE_NUM_FIELDS = [
+  'hourlyRate',
+  'normalHours',
+  'otHours',
+  'doubleHours',
+  'normalPay',
+  'otPay',
+  'doublePay',
+  'otRate',
+  'doubleRate',
+  'grossPay',
+  'employeeNpf',
+  'employerNpf',
+  'employeeAcc',
+  'employerAcc',
+  'tax',
+  'teaFund',
+  'iouDeduction',
+  'iouAmount',
+  'iouPaid',
+  'loanBalance',
+  'iouPaymentsCount',
+  'employerCost',
+];
+
+/** Manual edit of payslip amounts (summary / detail). Recalculates net + syncs payroll IOU. */
+export const updatePayslip = asyncHandler(async (req, res) => {
+  const payslip = await Payslip.findById(req.params.id);
+  if (!payslip) throw new AppError('Payslip not found', 404);
+
+  const prevIou = Number(payslip.iouDeduction) || 0;
+
+  for (const f of EDITABLE_NUM_FIELDS) {
+    if (req.body[f] !== undefined && req.body[f] !== null && req.body[f] !== '') {
+      payslip[f] = round2(Number(req.body[f]) || 0);
+    }
+  }
+  if (req.body.comments !== undefined) payslip.comments = String(req.body.comments || '');
+  if (req.body.bank !== undefined) payslip.bank = String(req.body.bank || '');
+  if (req.body.accountNumber !== undefined) payslip.accountNumber = String(req.body.accountNumber || '');
+  if (req.body.npfNumber !== undefined) payslip.npfNumber = String(req.body.npfNumber || '');
+  if (req.body.position !== undefined) payslip.position = String(req.body.position || '');
+
+  // Recalculate deductions + net from current field values
+  payslip.totalDeductions = round2(
+    (Number(payslip.employeeNpf) || 0) +
+      (Number(payslip.employeeAcc) || 0) +
+      (Number(payslip.tax) || 0) +
+      (Number(payslip.teaFund) || 0) +
+      (Number(payslip.iouDeduction) || 0)
+  );
+  payslip.netPay = round2((Number(payslip.grossPay) || 0) - payslip.totalDeductions);
+
+  // Invalidate cached PDF so next download regenerates
+  if (payslip.pdfPath) {
+    unlinkPayslipPdf(payslip.pdfPath);
+    payslip.pdfPath = '';
+  }
+
+  await payslip.save();
+
+  // Keep weekly payroll line in sync when IOU deduction changed
+  const newIou = Number(payslip.iouDeduction) || 0;
+  if (payslip.type === 'weekly' && payslip.week && prevIou !== newIou) {
+    const Payroll = (await import('../models/Payroll.js')).default;
+    const payroll = await Payroll.findOne({
+      type: 'weekly',
+      year: payslip.year,
+      month: payslip.month,
+      week: payslip.week,
+    });
+    if (payroll) {
+      const line = (payroll.lines || []).find(
+        (l) => String(l.employee) === String(payslip.employee)
+      );
+      if (line) {
+        line.iouDeduction = newIou;
+        line.netPay = round2((Number(line.netPay) || 0) + prevIou - newIou);
+        if (payroll.totals) {
+          payroll.totals.iou = round2((Number(payroll.totals.iou) || 0) - prevIou + newIou);
+          payroll.totals.netPay = round2((Number(payroll.totals.netPay) || 0) + prevIou - newIou);
+        }
+        payroll.markModified('lines');
+        payroll.markModified('totals');
+        await payroll.save();
+      }
+    }
+  }
+
+  const populated = await Payslip.findById(payslip._id).populate({
+    path: 'employee',
+    select: 'employeeId fullName email department bank npfNumber position',
+    populate: { path: 'department', select: 'name' },
+  });
+  res.json(populated);
 });
 
 /** Delete all payslips for the selected year / month / week (or monthly period) */

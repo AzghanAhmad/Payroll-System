@@ -14,6 +14,7 @@ router.get('/download/:id', ctrl.downloadPayslip);
 router.get('/download-excel/:id', ctrl.downloadPayslipExcel);
 router.post('/email/:id', authorize('admin', 'manager', 'hr'), ctrl.emailPayslip);
 router.delete('/:id', authorize('admin', 'manager', 'hr'), ctrl.deletePayslip);
+router.put('/:id', authorize('admin', 'manager', 'hr'), ctrl.updatePayslip);
 router.get('/:id', ctrl.getPayslip);
 
 export default router;

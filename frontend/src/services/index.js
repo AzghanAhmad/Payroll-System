@@ -66,6 +66,7 @@ export const payrollApi = {
 export const payslipApi = {
   list: (params) => api.get('/payslips', { params }).then((r) => r.data),
   get: (id) => api.get(`/payslips/${id}`).then((r) => r.data),
+  update: (id, data) => api.put(`/payslips/${id}`, data).then((r) => r.data),
   download: (id) => api.get(`/payslips/download/${id}`, { responseType: 'blob' }),
   downloadExcel: (id) => api.get(`/payslips/download-excel/${id}`, { responseType: 'blob' }),
   downloadPack: (params) => api.get('/payslips/download-pack', { params, responseType: 'blob' }),
@@ -85,6 +86,7 @@ export const loanApi = {
   setWeekPayment: (id, data) => api.put(`/loans/${id}/week-payment`, data).then((r) => r.data),
   addPayment: (id, data) => api.post(`/loans/${id}/payments`, data).then((r) => r.data),
   remove: (id) => api.delete(`/loans/${id}`).then((r) => r.data),
+  reset: (data) => api.post('/loans/reset', data || {}).then((r) => r.data),
 };
 
 export const settingsApi = {

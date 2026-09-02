@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Printer, Eye, FileStack, Trash2 } from 'lucide-react';
+import { Printer, Eye, FileStack, Trash2, Pencil } from 'lucide-react';
 import AppLayout from '@/layouts/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Input';
+import { Select, Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { ShareMenu } from '@/components/ui/ShareMenu';
 import { DownloadMenu } from '@/components/ui/DownloadMenu';
@@ -34,6 +34,8 @@ export default function PayslipsPage() {
   const [periodType, setPeriodType] = useState('weekly'); // weekly | monthly
   const [department, setDepartment] = useState('');
   const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState({});
   const [view, setView] = useState('list'); // list | staff
 
   const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
@@ -125,6 +127,46 @@ export default function PayslipsPage() {
     },
     onError: (err) => toast.error(err.response?.data?.message || err.message || 'Delete failed'),
   });
+
+  const openEdit = (p) => {
+    setEditing(p);
+    setEditForm({
+      hourlyRate: p.hourlyRate ?? 0,
+      normalHours: p.normalHours ?? 0,
+      otHours: p.otHours ?? 0,
+      doubleHours: p.doubleHours ?? 0,
+      normalPay: p.normalPay ?? 0,
+      otPay: p.otPay ?? 0,
+      doublePay: p.doublePay ?? 0,
+      grossPay: p.grossPay ?? 0,
+      employeeNpf: p.employeeNpf ?? 0,
+      employeeAcc: p.employeeAcc ?? 0,
+      tax: p.tax ?? 0,
+      teaFund: p.teaFund ?? 0,
+      iouDeduction: p.iouDeduction ?? 0,
+      iouAmount: p.iouAmount ?? 0,
+      iouPaid: p.iouPaid ?? 0,
+      loanBalance: p.loanBalance ?? 0,
+      iouPaymentsCount: p.iouPaymentsCount ?? 0,
+      comments: p.comments || '',
+    });
+  };
+
+  const updateMut = useMutation({
+    mutationFn: () => payslipApi.update(editing._id, editForm),
+    onSuccess: (updated) => {
+      toast.success('Payslip amounts updated');
+      setEditing(null);
+      setSelected((s) => (s && String(s._id) === String(updated._id) ? updated : s));
+      qc.invalidateQueries({ queryKey: ['payslips'] });
+      qc.invalidateQueries({ queryKey: ['payrolls'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || err.message || 'Update failed'),
+  });
+
+  const setEditNum = (field) => (e) => {
+    setEditForm((f) => ({ ...f, [field]: e.target.value }));
+  };
 
   const handleDelete = (p) => {
     const name = p.employee?.fullName || 'this employee';
@@ -395,7 +437,8 @@ export default function PayslipsPage() {
                       <td className="px-3 py-2 text-right font-semibold text-primary">{formatMoney(p.netPay)}</td>
                       <td className="px-3 py-2">
                         <div className="flex justify-end gap-1 items-center">
-                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => setSelected(p)}><Eye size={16} /></button>
+                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => setSelected(p)} title="View"><Eye size={16} /></button>
+                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer text-primary" onClick={() => openEdit(p)} title="Edit amounts"><Pencil size={16} /></button>
                           <DownloadMenu
                             iconOnly
                             onPdf={() => download(p, 'pdf')}
@@ -407,7 +450,7 @@ export default function PayslipsPage() {
                             onEmail={() => email(p._id)}
                             emailLabel="Email to staff"
                           />
-                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => printPayslip(p._id)}><Printer size={16} /></button>
+                          <button type="button" className="p-2 rounded-full hover:bg-slate-100 cursor-pointer" onClick={() => printPayslip(p._id)} title="Print"><Printer size={16} /></button>
                           <button
                             type="button"
                             className="p-2 rounded-full hover:bg-red-50 text-red-600 cursor-pointer"
@@ -444,6 +487,7 @@ export default function PayslipsPage() {
                 payslip={p}
                 fileCtx={fileCtx}
                 onOpen={() => setSelected(p)}
+                onEdit={() => openEdit(p)}
                 onDownloadPdf={() => download(p, 'pdf')}
                 onDownloadExcel={() => download(p, 'excel')}
                 onDelete={() => handleDelete(p)}
@@ -465,15 +509,85 @@ export default function PayslipsPage() {
             onEmail={() => email(selected._id)}
             shareText={shareTextFor(selected)}
             onPrint={() => printPayslip(selected._id)}
+            onEdit={() => {
+              openEdit(selected);
+              setSelected(null);
+            }}
             onDelete={() => handleDelete(selected)}
           />
+        )}
+      </Modal>
+
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={`Edit Payslip — ${editing?.employee?.fullName || ''}`}
+        className="max-w-3xl"
+      >
+        {editing && (
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateMut.mutate();
+            }}
+          >
+            <p className="text-xs text-muted">
+              Change any amount below. Net pay recalculates from Gross − (NPF + ACC + Tax + Tea + IOU).
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Input label="Hourly Rate" type="number" step="0.01" value={editForm.hourlyRate} onChange={setEditNum('hourlyRate')} />
+              <Input label="Normal Hours" type="number" step="0.01" value={editForm.normalHours} onChange={setEditNum('normalHours')} />
+              <Input label="OT Hours (T½)" type="number" step="0.01" value={editForm.otHours} onChange={setEditNum('otHours')} />
+              <Input label="Double Hours (T2)" type="number" step="0.01" value={editForm.doubleHours} onChange={setEditNum('doubleHours')} />
+              <Input label="Normal Pay" type="number" step="0.01" value={editForm.normalPay} onChange={setEditNum('normalPay')} />
+              <Input label="OT Pay" type="number" step="0.01" value={editForm.otPay} onChange={setEditNum('otPay')} />
+              <Input label="Double Pay" type="number" step="0.01" value={editForm.doublePay} onChange={setEditNum('doublePay')} />
+              <Input label="Gross Pay" type="number" step="0.01" value={editForm.grossPay} onChange={setEditNum('grossPay')} />
+              <Input label="NPF" type="number" step="0.01" value={editForm.employeeNpf} onChange={setEditNum('employeeNpf')} />
+              <Input label="ACC" type="number" step="0.01" value={editForm.employeeAcc} onChange={setEditNum('employeeAcc')} />
+              <Input label="Tax" type="number" step="0.01" value={editForm.tax} onChange={setEditNum('tax')} />
+              <Input label="Tea Fund" type="number" step="0.01" value={editForm.teaFund} onChange={setEditNum('teaFund')} />
+              <Input label="IOU Deduction" type="number" step="0.01" value={editForm.iouDeduction} onChange={setEditNum('iouDeduction')} />
+              <Input label="IOU Amount" type="number" step="0.01" value={editForm.iouAmount} onChange={setEditNum('iouAmount')} />
+              <Input label="IOU Paid" type="number" step="0.01" value={editForm.iouPaid} onChange={setEditNum('iouPaid')} />
+              <Input label="IOU Balance" type="number" step="0.01" value={editForm.loanBalance} onChange={setEditNum('loanBalance')} />
+              <Input label="IOU Payments Count" type="number" step="1" value={editForm.iouPaymentsCount} onChange={setEditNum('iouPaymentsCount')} />
+            </div>
+            <Input
+              label="Comments"
+              value={editForm.comments}
+              onChange={(e) => setEditForm((f) => ({ ...f, comments: e.target.value }))}
+            />
+            <div className="rounded-[14px] bg-slate-50 px-4 py-3 text-sm flex justify-between">
+              <span className="text-muted">Estimated net pay</span>
+              <strong className="text-primary">
+                {formatMoney(
+                  Number(editForm.grossPay || 0) -
+                    (Number(editForm.employeeNpf || 0) +
+                      Number(editForm.employeeAcc || 0) +
+                      Number(editForm.tax || 0) +
+                      Number(editForm.teaFund || 0) +
+                      Number(editForm.iouDeduction || 0))
+                )}
+              </strong>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateMut.isPending}>
+                {updateMut.isPending ? 'Saving…' : 'Save Amounts'}
+              </Button>
+            </div>
+          </form>
         )}
       </Modal>
     </AppLayout>
   );
 }
 
-function StaffPayslipCard({ payslip: p, fileCtx, onOpen, onDownloadPdf, onDownloadExcel, onDelete }) {
+function StaffPayslipCard({ payslip: p, fileCtx, onOpen, onEdit, onDownloadPdf, onDownloadExcel, onDelete }) {
   return (
     <Card className="space-y-3">
       <div className="flex justify-between gap-2 border-b border-border pb-3">
@@ -519,6 +633,9 @@ function StaffPayslipCard({ payslip: p, fileCtx, onOpen, onDownloadPdf, onDownlo
       </div>
       <div className="flex gap-2 justify-end items-center">
         <Button type="button" variant="outline" size="sm" onClick={onOpen}>View</Button>
+        <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+          <Pencil size={14} /> Edit
+        </Button>
         <DownloadMenu size="sm" onPdf={onDownloadPdf} onExcel={onDownloadExcel} />
         <Button type="button" variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50" onClick={onDelete}>
           Delete
@@ -528,7 +645,7 @@ function StaffPayslipCard({ payslip: p, fileCtx, onOpen, onDownloadPdf, onDownlo
   );
 }
 
-function PayslipDetail({ payslip: p, onDownloadPdf, onDownloadExcel, onEmail, onPrint, onDelete, shareText }) {
+function PayslipDetail({ payslip: p, onDownloadPdf, onDownloadExcel, onEmail, onPrint, onEdit, onDelete, shareText }) {
   return (
     <div className="space-y-4 text-sm">
       <div className="grid grid-cols-2 gap-2">
@@ -577,6 +694,9 @@ function PayslipDetail({ payslip: p, onDownloadPdf, onDownloadExcel, onEmail, on
       <div className="flex gap-2 justify-end items-center">
         <Button type="button" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={onDelete}>
           Delete
+        </Button>
+        <Button type="button" variant="outline" onClick={onEdit}>
+          <Pencil size={16} /> Edit Amounts
         </Button>
         <DownloadMenu onPdf={onDownloadPdf} onExcel={onDownloadExcel} />
         <ShareMenu
