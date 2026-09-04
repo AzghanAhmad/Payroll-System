@@ -131,28 +131,62 @@ const dayKeyForDate = (date) => {
   return map[date.getDay()];
 };
 
+/** Friday that starts the payroll week containing `date` (Fri→Thu weeks). */
+const getFridayOfWeek = (date) => {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setHours(0, 0, 0, 0);
+  const offset = (d.getDay() - 5 + 7) % 7;
+  d.setDate(d.getDate() - offset);
+  return d;
+};
+
 const findWeekNumber = (year, month, date) => {
+  const t = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   for (let w = 1; w <= 5; w++) {
     const { start, end } = getWeekPeriod(year, month, w);
-    const t = date.getTime();
     if (t >= start.getTime() && t <= end.getTime()) return w;
   }
   return null;
 };
 
 /**
- * Map a calendar date to payroll year/month/week.
- * When preferredWeekNumber is set (payroll workbook week block), prefer the
- * month whose week N contains that date (e.g. 25 Jun → July week 1, not June week 5).
+ * Map a calendar date → payroll { year, month, weekNumber }.
+ *
+ * Why September days looked "skipped":
+ * A Fri→Thu week can sit in TWO months at once (e.g. 28 Aug–3 Sep =
+ * August week 5 AND September week 1). Old logic put Sep 1–3 into September
+ * while Aug 28–31 stayed in August, so the August timesheet looked incomplete.
+ *
+ * Rules (first match wins):
+ * 1. preferredWeekNumber (from payroll .xlsm "WEEK N WORKLOG") → month whose week N contains the date
+ * 2. preferredYear + preferredMonth (timesheet you're viewing) → if that month's weeks contain the date
+ * 3. Keep the whole Fri→Thu week in ONE month: month of the Friday that starts the week
+ * 4. Fall back to neighbouring months
  */
-const resolvePayrollPlacement = (date, preferredWeekNumber = null) => {
-  let year = date.getFullYear();
-  let month = date.getMonth() + 1;
-  const candidates = [
-    { year, month },
-    month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 },
-    month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 },
-  ];
+const resolvePayrollPlacement = (
+  date,
+  preferredWeekNumber = null,
+  preferredYearMonth = null
+) => {
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const friday = getFridayOfWeek(date);
+  const fridayMonth = { year: friday.getFullYear(), month: friday.getMonth() + 1 };
+
+  const candidates = [];
+  const pushCand = (c) => {
+    if (!c?.year || !c?.month) return;
+    if (candidates.some((x) => x.year === c.year && x.month === c.month)) return;
+    candidates.push(c);
+  };
+
+  if (preferredYearMonth?.year && preferredYearMonth?.month) {
+    pushCand(preferredYearMonth);
+  }
+  pushCand(fridayMonth);
+  pushCand({ year: y, month: m });
+  pushCand(m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 });
+  pushCand(m === 12 ? { year: y + 1, month: 1 } : { year: y, month: m + 1 });
 
   if (preferredWeekNumber != null) {
     for (const cand of candidates) {
@@ -163,19 +197,11 @@ const resolvePayrollPlacement = (date, preferredWeekNumber = null) => {
     }
   }
 
-  let weekNumber = findWeekNumber(year, month, date);
-  if (!weekNumber) {
-    for (const cand of candidates.slice(1)) {
-      const w = findWeekNumber(cand.year, cand.month, date);
-      if (w) {
-        year = cand.year;
-        month = cand.month;
-        weekNumber = w;
-        break;
-      }
-    }
+  for (const cand of candidates) {
+    const w = findWeekNumber(cand.year, cand.month, date);
+    if (w) return { year: cand.year, month: cand.month, weekNumber: w };
   }
-  return weekNumber ? { year, month, weekNumber } : null;
+  return null;
 };
 
 const normalizeHeader = (value) =>
@@ -428,7 +454,15 @@ const saveTouchedTimesheets = async (touchedMonths) => {
  * Client payroll workbook → sheet "Timesheets":
  * WEEK N blocks with per-day columns In / Out / In / Out / Break / Total (Fri–Thu).
  */
-const importPayrollTimesheets = async ({ rows, matchEmployee, getTs, settings, errors, updates }) => {
+const importPayrollTimesheets = async ({
+  rows,
+  matchEmployee,
+  getTs,
+  settings,
+  errors,
+  updates,
+  preferredYearMonth = null,
+}) => {
   let sheetWeek = null;
   let dayDates = [];
 
@@ -497,7 +531,7 @@ const importPayrollTimesheets = async ({ rows, matchEmployee, getTs, settings, e
       if (!clockIn) {
         errors.push({
           row: i + 1,
-          message: `Missing In for ${emp.fullName} on ${date.toISOString().slice(0, 10)}`,
+          message: `Missing In for ${emp.fullName} on ${formatLocalDate(date)}`,
         });
         continue;
       }
@@ -511,7 +545,8 @@ const importPayrollTimesheets = async ({ rows, matchEmployee, getTs, settings, e
       }
 
       const placement =
-        resolvePayrollPlacement(date, sheetWeek) || resolvePayrollPlacement(date, null);
+        resolvePayrollPlacement(date, sheetWeek, preferredYearMonth) ||
+        resolvePayrollPlacement(date, null, preferredYearMonth);
       if (!placement) {
         errors.push({
           row: i + 1,
@@ -564,6 +599,7 @@ const importBiometricRows = async ({
   settings,
   errors,
   updates,
+  preferredYearMonth = null,
 }) => {
   const { headerRow, colAc, colName, colDate, colIn, colOut } = header;
 
@@ -580,7 +616,10 @@ const importBiometricRows = async ({
 
     const date = parseBiometricDate(dateRaw);
     if (!date) {
-      errors.push({ row: i + 1, message: `Invalid date: ${dateRaw}` });
+      errors.push({
+        row: i + 1,
+        message: `Invalid date "${dateRaw}" — use D/M/YYYY (e.g. 1/09/2026) or Excel date cells`,
+      });
       continue;
     }
 
@@ -606,17 +645,22 @@ const importBiometricRows = async ({
       });
     }
 
-    const placement = resolvePayrollPlacement(date, null);
+    const placement = resolvePayrollPlacement(date, null, preferredYearMonth);
     if (!placement) {
       errors.push({
         row: i + 1,
-        message: `Could not map date ${date.toDateString()} to a payroll week`,
+        message: `Could not map date ${formatLocalDate(date)} to a payroll week`,
       });
       continue;
     }
 
     const { year, month, weekNumber } = placement;
     const dayKey = dayKeyForDate(date);
+    if (!dayKey) {
+      errors.push({ row: i + 1, message: `Could not resolve weekday for ${formatLocalDate(date)}` });
+      continue;
+    }
+
     const ts = await getTs(year, month);
     const week = ts.weeks.find((w) => w.weekNumber === weekNumber);
     let entry = week.entries.find((e) => String(e.employee) === String(emp._id));
@@ -652,6 +696,12 @@ const importBiometricRows = async ({
 export const importAttendanceExcel = asyncHandler(async (req, res) => {
   if (!req.file) throw new AppError('Excel file required');
 
+  // Optional: timesheet month currently open in the UI (keeps boundary weeks together)
+  const preferredYear = Number(req.body?.year) || null;
+  const preferredMonth = Number(req.body?.month) || null;
+  const preferredYearMonth =
+    preferredYear && preferredMonth ? { year: preferredYear, month: preferredMonth } : null;
+
   const filePath = req.file.path;
   try {
     const { sheetName, rows } = loadWorkbook(filePath);
@@ -673,12 +723,13 @@ export const importAttendanceExcel = asyncHandler(async (req, res) => {
         settings,
         errors,
         updates,
+        preferredYearMonth,
       });
     } else {
       const header = findHeader(rows);
       if (!header) {
         throw new AppError(
-          'Expected either a payroll "Timesheets" sheet (WEEK WORKLOG with In/Out/Break) or biometric columns: AC-No. (or Name), Date, Clock In, Clock Out.'
+          'Could not find a header row. Use a sheet with columns like: AC-No. | Name | Date | Clock In | Clock Out (or a payroll Timesheets week worklog). Dates should be D/M/YYYY (e.g. 28/08/2026, 1/09/2026).'
         );
       }
       await importBiometricRows({
@@ -689,19 +740,46 @@ export const importAttendanceExcel = asyncHandler(async (req, res) => {
         settings,
         errors,
         updates,
+        preferredYearMonth,
       });
     }
 
     await saveTouchedTimesheets(touchedMonths);
 
+    // Summarise by month/week so it's obvious where days landed
+    const byMonth = {};
+    for (const u of updates) {
+      const key = `${u.year}-${u.month}`;
+      if (!byMonth[key]) byMonth[key] = { year: u.year, month: u.month, count: 0, weeks: new Set(), dates: new Set() };
+      byMonth[key].count += 1;
+      byMonth[key].weeks.add(u.week);
+      byMonth[key].dates.add(u.date);
+    }
+    const monthSummary = Object.values(byMonth).map((m) => ({
+      year: m.year,
+      month: m.month,
+      label: `${m.year}-${String(m.month).padStart(2, '0')}`,
+      rows: m.count,
+      weeks: [...m.weeks].sort((a, b) => a - b),
+      dateFrom: [...m.dates].sort()[0] || null,
+      dateTo: [...m.dates].sort().slice(-1)[0] || null,
+    }));
+
     res.json({
-      message: `Imported ${updates.length} attendance row(s) from sheet "${sheetName}"`,
+      message: `Imported ${updates.length} attendance day(s) from sheet "${sheetName}"`,
       source: payrollLayout ? 'payroll-timesheets' : 'biometric',
       sheet: sheetName,
       updated: updates.length,
+      preferredMonth: preferredYearMonth
+        ? `${preferredYearMonth.year}-${preferredYearMonth.month}`
+        : null,
       monthsTouched: [...touchedMonths.keys()],
+      monthSummary,
       errors,
-      sample: updates.slice(0, 10),
+      sample: updates.slice(0, 15),
+      tip: preferredYearMonth
+        ? 'Days in weeks that overlap two months were placed into the timesheet month you had open.'
+        : 'Tip: open the payroll month you want before importing so boundary weeks (e.g. late Aug / early Sep) stay on that month.',
     });
   } finally {
     fs.promises.unlink(filePath).catch(() => {});

@@ -73,11 +73,36 @@ export default function TimesheetsPage() {
     queryFn: () => timesheetApi.getMonth(year, month),
   });
 
+  // When the selected week spills into another calendar month (e.g. Aug week 5 → early Sep),
+  // also load that adjacent timesheet so we can show those days' clock times.
+  const periodPreview = useMemo(() => getWeekPeriod(year, month, week), [year, month, week]);
+  const spillAdjacent = useMemo(() => {
+    const startM = periodPreview.start.getMonth() + 1;
+    const startY = periodPreview.start.getFullYear();
+    const endM = periodPreview.end.getMonth() + 1;
+    const endY = periodPreview.end.getFullYear();
+    // Days before current month → previous month; days after → next month
+    if (startY < year || (startY === year && startM < month)) {
+      return { year: startY, month: startM };
+    }
+    if (endY > year || (endY === year && endM > month)) {
+      return { year: endY, month: endM };
+    }
+    return null;
+  }, [periodPreview, year, month]);
+
+  const { data: adjacentTimesheet } = useQuery({
+    queryKey: ['timesheet', spillAdjacent?.year, spillAdjacent?.month],
+    queryFn: () => timesheetApi.getMonth(spillAdjacent.year, spillAdjacent.month),
+    enabled: Boolean(spillAdjacent?.year && spillAdjacent?.month),
+  });
+
   const [localWeeks, setLocalWeeks] = useState([]);
   const [attendanceFile, setAttendanceFile] = useState(null);
   const timesheetDirty = useRef(false);
   const pendingSave = useRef(false);
   const localWeeksRef = useRef([]);
+  const spillMergedRef = useRef('');
 
   useEffect(() => {
     localWeeksRef.current = localWeeks;
@@ -90,6 +115,7 @@ export default function TimesheetsPage() {
       const server = JSON.parse(JSON.stringify(timesheet.weeks));
       if (!timesheetDirty.current || !prev?.length) {
         timesheetDirty.current = false;
+        spillMergedRef.current = '';
         return server;
       }
       return server.map((sw) => {
@@ -112,26 +138,163 @@ export default function TimesheetsPage() {
     });
   }, [timesheet]);
 
-  const attendanceMut = useMutation({
-    mutationFn: () => opsApi.importAttendance(attendanceFile),
-    onSuccess: (res) => {
-      const months = (res.monthsTouched || []).join(', ');
-      toast.success(
-        `${res.message || 'Attendance imported'}${months ? ` → month(s): ${months}` : ''}`
+  /** Fill empty day slots from the overlapping week in the adjacent month (e.g. Sep days on Aug week 5). */
+  useEffect(() => {
+    if (!spillAdjacent || !adjacentTimesheet?.weeks?.length || !localWeeks?.length) return;
+    if (timesheetDirty.current) return;
+
+    const { start } = getWeekPeriod(year, month, week);
+    const adjWeek = (adjacentTimesheet.weeks || []).find((w) => {
+      const { start: s } = getWeekPeriod(spillAdjacent.year, spillAdjacent.month, w.weekNumber);
+      return s.getTime() === start.getTime();
+    });
+    if (!adjWeek) return;
+
+    const mergeKey = `${year}-${month}-W${week}←${spillAdjacent.year}-${spillAdjacent.month}-W${adjWeek.weekNumber}`;
+    if (spillMergedRef.current === mergeKey) return;
+
+    const dayHasTime = (d) => Boolean(d?.clockIn || d?.clockOut);
+    let changed = false;
+
+    const next = localWeeks.map((w) => {
+      if (Number(w.weekNumber) !== Number(week)) return w;
+      const adjByEmp = new Map(
+        (adjWeek.entries || []).map((e) => [String(e.employee?._id || e.employee), e])
       );
+      const entries = (w.entries || []).map((entry) => {
+        const id = String(entry.employee?._id || entry.employee);
+        const adjEntry = adjByEmp.get(id);
+        if (!adjEntry?.days) return entry;
+        const days = { ...(entry.days || {}) };
+        let entryChanged = false;
+        WEEK_DAYS.forEach((d, dayIndex) => {
+          const dayDate = getDayDate(year, month, week, dayIndex);
+          const outsideMonth =
+            dayDate.getFullYear() !== year || dayDate.getMonth() + 1 !== month;
+          if (!outsideMonth) return;
+          const cur = days[d.key] || {};
+          const src = adjEntry.days[d.key] || {};
+          if (dayHasTime(cur) || !dayHasTime(src)) return;
+          days[d.key] = {
+            ...cur,
+            clockIn: src.clockIn || '',
+            clockOut: src.clockOut || '',
+            breakHours: src.breakHours ?? cur.breakHours ?? 0,
+            breakManual: src.breakManual ?? cur.breakManual ?? false,
+            workingHours: src.workingHours ?? cur.workingHours ?? 0,
+            dailyCost: src.dailyCost ?? cur.dailyCost ?? 0,
+            remarks: src.remarks || cur.remarks || '',
+            isDoubleTime: src.isDoubleTime ?? cur.isDoubleTime ?? false,
+          };
+          entryChanged = true;
+        });
+        if (!entryChanged) return entry;
+        changed = true;
+        const weeklyHours = WEEK_DAYS.reduce(
+          (s, day) => s + (Number(days[day.key]?.workingHours) || 0),
+          0
+        );
+        const weeklyCost = WEEK_DAYS.reduce(
+          (s, day) => s + (Number(days[day.key]?.dailyCost) || 0),
+          0
+        );
+        return {
+          ...entry,
+          days,
+          weeklyHours: Math.round(weeklyHours * 100) / 100,
+          weeklyCost: Math.round(weeklyCost * 100) / 100,
+        };
+      });
+
+      // Also add employees who only exist on the adjacent week for spill days
+      for (const adjEntry of adjWeek.entries || []) {
+        const id = String(adjEntry.employee?._id || adjEntry.employee);
+        if (entries.some((e) => String(e.employee?._id || e.employee) === id)) continue;
+        const hasSpill = WEEK_DAYS.some((d, dayIndex) => {
+          const dayDate = getDayDate(year, month, week, dayIndex);
+          const outside =
+            dayDate.getFullYear() !== year || dayDate.getMonth() + 1 !== month;
+          return outside && dayHasTime(adjEntry.days?.[d.key]);
+        });
+        if (!hasSpill) continue;
+        const days = {};
+        WEEK_DAYS.forEach((d, dayIndex) => {
+          const dayDate = getDayDate(year, month, week, dayIndex);
+          const outside =
+            dayDate.getFullYear() !== year || dayDate.getMonth() + 1 !== month;
+          const src = adjEntry.days?.[d.key] || {};
+          days[d.key] = outside && dayHasTime(src)
+            ? { ...src }
+            : {
+                clockIn: '',
+                clockOut: '',
+                breakHours: 0,
+                breakManual: false,
+                workingHours: 0,
+                dailyCost: 0,
+                remarks: '',
+                isDoubleTime: false,
+              };
+        });
+        const weeklyHours = WEEK_DAYS.reduce(
+          (s, day) => s + (Number(days[day.key]?.workingHours) || 0),
+          0
+        );
+        entries.push({
+          ...adjEntry,
+          days,
+          weeklyHours: Math.round(weeklyHours * 100) / 100,
+        });
+        changed = true;
+      }
+
+      return { ...w, entries };
+    });
+
+    if (!changed) {
+      spillMergedRef.current = mergeKey;
+      return;
+    }
+    spillMergedRef.current = mergeKey;
+    timesheetDirty.current = true;
+    setLocalWeeks(next);
+  }, [adjacentTimesheet, spillAdjacent, localWeeks, year, month, week]);
+
+  const attendanceMut = useMutation({
+    mutationFn: () => opsApi.importAttendance(attendanceFile, { year, month }),
+    onSuccess: (res) => {
+      const summary = (res.monthSummary || [])
+        .map((m) => `${m.label} (W${(m.weeks || []).join('/')}: ${m.rows} days)`)
+        .join(' · ');
+      toast.success(
+        `${res.message || 'Attendance imported'}${summary ? `\n${summary}` : ''}`,
+        { duration: 6000 }
+      );
+      if (res.tip) toast(res.tip, { icon: 'ℹ️', duration: 5000 });
       if (res.errors?.length) {
+        const first = res.errors[0]?.message || '';
         toast.error(
-          `${res.errors.length} row(s) skipped — check names match employees (first name is OK)`
+          `${res.errors.length} row(s) skipped${first ? `: ${first}` : ' — check names/dates'}`,
+          { duration: 7000 }
         );
       }
-      if (months) {
-        // Jump timesheet view to the first imported month so data is visible
-        const [y, m] = String(months.split(',')[0]).trim().split('-').map(Number);
+      // Stay on / jump to the preferred (open) month, else first touched
+      const prefer = res.preferredMonth || (res.monthsTouched || [])[0];
+      let targetYear = year;
+      let targetMonth = month;
+      if (prefer) {
+        const [y, m] = String(prefer).trim().split('-').map(Number);
         if (y && m) {
+          targetYear = y;
+          targetMonth = m;
           setYear(y);
           setMonth(m);
         }
       }
+      const weeks = (res.monthSummary || []).find(
+        (m) => m.year === targetYear && m.month === targetMonth
+      )?.weeks;
+      if (weeks?.length) setWeek(weeks[weeks.length - 1]);
       setAttendanceFile(null);
       qc.invalidateQueries({ queryKey: ['timesheet'] });
     },
@@ -354,6 +517,9 @@ export default function TimesheetsPage() {
               <span className="font-heading text-slate-800">Week {week} Worklog & Costing</span>
               <div>
                 Period: {formatShortDate(period.start)} – {formatShortDate(period.end)} · {MONTHS[month - 1]}-{year}
+                {spillAdjacent
+                  ? ` (includes ${MONTHS[spillAdjacent.month - 1]} days)`
+                  : ''}
               </div>
             </div>
             <span className="text-xs text-muted px-2 py-1 rounded-lg bg-slate-50 border border-border">
@@ -411,10 +577,11 @@ export default function TimesheetsPage() {
           <div>
             <h3 className="font-heading text-sm">Attendance / Timesheet Upload</h3>
             <p className="text-xs text-muted mt-1 max-w-xl">
-              Upload the client payroll workbook (.xlsm) — we read the <strong>Timesheets</strong> sheet
-              (In, Out, Break per day) — or a biometric export (AC-No., Name, Date, Clock In/Out). Staff
-              are matched by <strong>name</strong>. After import, the view switches to the month in the
-              file.
+              Import a biometric sheet with columns <strong>AC-No.</strong>, <strong>Name</strong>,{' '}
+              <strong>Date</strong> (D/M/YYYY), <strong>Clock In</strong>, <strong>Clock Out</strong>
+              — or a payroll .xlsm Timesheets worklog. Days are applied to the month you have open
+              ({MONTHS[month - 1]} {year}), including weeks that spill into the next calendar month
+              (e.g. 1–3 Sep stay on late-August week 5).
             </p>
           </div>
           <div className="space-y-1.5">
@@ -453,6 +620,9 @@ export default function TimesheetsPage() {
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-900 px-3 py-1 border border-emerald-200">
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Green = calculated
           </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 text-teal-900 px-3 py-1 border border-teal-200">
+            <span className="h-2.5 w-2.5 rounded-full bg-teal-500" /> Teal = days in next/prev month
+          </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 text-violet-900 px-3 py-1 border border-violet-200">
             <span className="h-2.5 w-2.5 rounded-full bg-violet-500" /> Purple = payroll costing
           </span>
@@ -481,13 +651,26 @@ export default function TimesheetsPage() {
                   </th>
                   {WEEK_DAYS.map((d, i) => {
                     const hol = isHolidayDay(week, d.key);
+                    const dayDate = getDayDate(year, month, week, i);
+                    const outsideMonth =
+                      dayDate.getFullYear() !== year || dayDate.getMonth() + 1 !== month;
                     return (
                       <th
                         key={d.key}
-                        className={`px-1 py-2 text-center min-w-[96px] sticky top-0 z-20 border-b border-border ${hol ? 'bg-rose-100 text-rose-900' : 'bg-slate-100'}`}
+                        className={`px-1 py-2 text-center min-w-[96px] sticky top-0 z-20 border-b border-border ${
+                          hol
+                            ? 'bg-rose-100 text-rose-900'
+                            : outsideMonth
+                              ? 'bg-teal-50 text-teal-900'
+                              : 'bg-slate-100'
+                        }`}
                       >
-                        <div>{d.label}{hol ? ' · Holiday' : ''}</div>
-                        <div className="font-normal text-muted">{formatShortDate(getDayDate(year, month, week, i))}</div>
+                        <div>
+                          {d.label}
+                          {hol ? ' · Holiday' : ''}
+                          {outsideMonth && !hol ? ` · ${MONTHS[dayDate.getMonth()].slice(0, 3)}` : ''}
+                        </div>
+                        <div className="font-normal text-muted">{formatShortDate(dayDate)}</div>
                       </th>
                     );
                   })}

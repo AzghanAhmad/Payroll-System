@@ -153,9 +153,11 @@ export const opsApi = {
   setCurrentMonth: (data) => api.put('/ops/month-control/current', data).then((r) => r.data),
   exportMonthPdfs: (params) =>
     api.get('/ops/month-control/export-pdfs', { params, responseType: 'blob' }),
-  importAttendance: (file) => {
+  importAttendance: (file, params = {}) => {
     const fd = new FormData();
     fd.append('file', file);
+    if (params.year) fd.append('year', String(params.year));
+    if (params.month) fd.append('month', String(params.month));
     return api
       .post('/ops/attendance/import', fd, { headers: { 'Content-Type': undefined } })
       .then((r) => r.data);
