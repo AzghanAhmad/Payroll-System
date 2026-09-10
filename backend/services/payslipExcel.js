@@ -3,21 +3,34 @@ import Payslip from '../models/Payslip.js';
 import Settings from '../models/Settings.js';
 import { getCurrencySymbol } from '../utils/currencies.js';
 import { buildPayslipExcelFilename } from './payslipPdf.js';
+import { getWeekPeriod } from '../utils/weekPeriod.js';
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+const money = (n, symbol) => `${symbol}${Number(n || 0).toFixed(2)}`;
+const hrs = (n) => Number(n || 0).toFixed(2);
 
-const fmtUsDate = (d) => (d ? new Date(d).toLocaleDateString('en-US') : '—');
-const fmtPayDay = (d) =>
-  d
-    ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-    : '—';
-const money = (n, symbol) => `${symbol} ${Number(n || 0).toFixed(2)}`;
+const fmtDate = (d) => {
+  if (!d) return '—';
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return '—';
+  return `${dt.getMonth() + 1}/${dt.getDate()}/${dt.getFullYear()}`;
+};
+
+const fmtRange = (start, end) => `${fmtDate(start)} – ${fmtDate(end)}`;
+
+const resolvePeriodDates = (payslip) => {
+  if (payslip.type === 'weekly' && payslip.year && payslip.month && payslip.week) {
+    const { start, end } = getWeekPeriod(payslip.year, payslip.month, payslip.week);
+    return { start, end, payDay: end };
+  }
+  return {
+    start: payslip.periodStart,
+    end: payslip.periodEnd,
+    payDay: payslip.payDay || payslip.periodEnd,
+  };
+};
 
 /**
- * Build one Alpha Group–style payslip worksheet (ss2).
+ * Client-preferred payslip look (matches PDF download).
  */
 export async function buildPayslipWorksheet(workbook, payslip, settings) {
   const emp = payslip.employee || {};
@@ -27,157 +40,140 @@ export async function buildPayslipWorksheet(workbook, payslip, settings) {
     .slice(0, 28);
   const sheet = workbook.addWorksheet(name || 'Payslip');
 
-  sheet.getColumn(1).width = 14;
-  sheet.getColumn(2).width = 14;
-  sheet.getColumn(3).width = 12;
+  sheet.getColumn(1).width = 22;
+  sheet.getColumn(2).width = 10;
+  sheet.getColumn(3).width = 10;
   sheet.getColumn(4).width = 12;
   sheet.getColumn(5).width = 3;
-  sheet.getColumn(6).width = 14;
-  sheet.getColumn(7).width = 14;
+  sheet.getColumn(6).width = 20;
+  sheet.getColumn(7).width = 12;
 
-  const company = settings.companyName || 'ALPHA GROUP';
+  const company = settings.companyName || 'Alpha Cafe and Chemist';
+  const location = (settings.companyAddress || '').split(/[\n,]/)[0]?.trim() || '';
+  const npfPct = Math.round((Number(settings.employeeNpfRate ?? 0.1) || 0.1) * 100);
+  const accPct = Math.round((Number(settings.employeeAccRate ?? 0.01) || 0.01) * 100);
+  const otRate = payslip.otRate || (payslip.hourlyRate || 0) * (settings.otMultiplier || 1.5);
+  const dblRate = payslip.doubleRate || (payslip.hourlyRate || 0) * (settings.doubleMultiplier || 2);
+
+  const { start: periodStart, end: periodEnd, payDay } = resolvePeriodDates(payslip);
+  const weekLine =
+    payslip.type === 'weekly' && payslip.week
+      ? `Week ${payslip.week} · ${fmtRange(periodStart, periodEnd)}`
+      : fmtRange(periodStart, periodEnd);
+
   sheet.getCell('A1').value = company;
-  sheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF1D4ED8' } };
-  sheet.mergeCells('C1:G1');
-  sheet.getCell('C1').value = settings.companyAddress || '';
-  sheet.getCell('C2').value = [
-    settings.companyPhone ? `T: ${settings.companyPhone}` : null,
-    settings.companyEmail ? `E: ${settings.companyEmail}` : null,
-  ]
-    .filter(Boolean)
-    .join('  |  ');
+  sheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF2563EB' } };
+  sheet.getCell('A2').value = location;
+  sheet.getCell('A2').font = { size: 10, color: { argb: 'FF64748B' } };
 
-  sheet.getCell('A4').value = 'PAYSLIP';
-  sheet.getCell('A4').font = { bold: true, size: 18 };
+  sheet.mergeCells('F1:G1');
+  sheet.getCell('F1').value = 'PAYSLIP';
+  sheet.getCell('F1').font = { bold: true, size: 18, color: { argb: 'FF0F172A' } };
+  sheet.getCell('F1').alignment = { horizontal: 'right' };
+  sheet.mergeCells('F2:G2');
+  sheet.getCell('F2').value = weekLine;
+  sheet.getCell('F2').font = { size: 9, color: { argb: 'FF64748B' } };
+  sheet.getCell('F2').alignment = { horizontal: 'right' };
 
-  const now = new Date();
-  sheet.getCell('A6').value = 'Employee:';
-  sheet.getCell('B6').value = emp.fullName || '';
-  sheet.getCell('F6').value = 'Period:';
-  sheet.getCell('G6').value = `${fmtUsDate(payslip.periodStart)} to ${fmtUsDate(payslip.periodEnd)}`;
+  sheet.getCell('A4').value = `Employee: ${emp.fullName || '—'}`;
+  sheet.getCell('A4').font = { bold: true, size: 11 };
 
-  sheet.getCell('A7').value = 'Position:';
-  sheet.getCell('B7').value = payslip.position || emp.position || '';
-  sheet.getCell('F7').value = 'Month:';
-  sheet.getCell('G7').value = MONTH_NAMES[(payslip.month || 1) - 1] || '';
+  sheet.getCell('A5').value =
+    `Position: ${payslip.position || emp.position || '—'} | Department: ${payslip.departmentName || '—'}`;
+  sheet.getCell('A6').value =
+    `Period Start: ${fmtDate(periodStart)} | Period End: ${fmtDate(periodEnd)}`;
+  sheet.getCell('A7').value =
+    `Pay Day: ${fmtDate(payDay)} | Hourly Rate: ${money(payslip.hourlyRate, symbol)}`;
+  sheet.getCell('A8').value =
+    `Bank: ${payslip.bank || emp.bank || '—'} | Account: ${payslip.accountNumber || emp.accountNumber || '—'} | NPF: ${payslip.npfNumber || emp.npfNumber || '—'}`;
+  for (const r of [5, 6, 7, 8]) {
+    sheet.getCell(`A${r}`).font = { size: 9, color: { argb: 'FF475569' } };
+  }
 
-  sheet.getCell('A8').value = 'Department:';
-  sheet.getCell('B8').value = payslip.departmentName || '';
-  sheet.getCell('F8').value = 'Pay Day:';
-  sheet.getCell('G8').value = fmtPayDay(payslip.payDay);
+  sheet.getCell('A10').value = 'Payments';
+  sheet.getCell('A10').font = { bold: true, size: 12, color: { argb: 'FF2563EB' } };
 
-  sheet.getCell('F9').value = 'Week:';
-  sheet.getCell('G9').value = payslip.type === 'weekly' ? payslip.week || '' : '';
-  sheet.getCell('F10').value = 'Date:';
-  sheet.getCell('G10').value = fmtUsDate(now);
-  sheet.getCell('F11').value = 'Time:';
-  sheet.getCell('G11').value = now.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-  // Payments / Deductions headers
-  const headers = ['Payments', 'Hours', 'Rate', 'Value', '', 'Deductions', 'Value'];
-  headers.forEach((h, i) => {
-    const cell = sheet.getCell(13, i + 1);
+  ['Description', 'Hours', 'Rate', 'Value'].forEach((h, i) => {
+    const cell = sheet.getCell(11, i + 1);
     cell.value = h;
-    cell.font = { bold: true };
-    cell.border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
+    cell.font = { size: 8, color: { argb: 'FF94A3B8' } };
+    if (i > 0) cell.alignment = { horizontal: 'right' };
   });
 
   const payRows = [
-    ['Normal Time', Number(payslip.normalHours || 0).toFixed(2), money(payslip.hourlyRate, symbol), money(payslip.normalPay, symbol)],
-    [
-      'Overtime',
-      Number(payslip.otHours || 0).toFixed(2),
-      money(payslip.otRate || (payslip.hourlyRate || 0) * 1.5, symbol),
-      money(payslip.otPay, symbol),
-    ],
-    [
-      'Double Time',
-      Number(payslip.doubleHours || 0).toFixed(2),
-      Number(payslip.doubleHours) ? money(payslip.doubleRate || (payslip.hourlyRate || 0) * 2, symbol) : '$ -',
-      Number(payslip.doublePay) ? money(payslip.doublePay, symbol) : '$ -',
-    ],
-    ['IOU', '', '', ''],
-    ['Tea Fund', '', '', ''],
+    ['Normal Time', hrs(payslip.normalHours), money(payslip.hourlyRate, symbol), money(payslip.normalPay, symbol)],
+    ['Overtime (T 1/2)', hrs(payslip.otHours), money(otRate, symbol), money(payslip.otPay, symbol)],
+    ['Double Time (T2)', hrs(payslip.doubleHours), money(dblRate, symbol), money(payslip.doublePay, symbol)],
   ];
   const dedRows = [
-    ['SNPF', money(payslip.employeeNpf, symbol)],
-    ['ACC', money(payslip.employeeAcc, symbol)],
-    ['PAYE', money(payslip.tax, symbol)],
+    [`NPF / SNPF (${npfPct}%)`, money(payslip.employeeNpf, symbol)],
+    [`ACC (${accPct}%)`, money(payslip.employeeAcc, symbol)],
+    ['Tax / PAYE', money(payslip.tax, symbol)],
     ['IOU', money(payslip.iouDeduction, symbol)],
-    ['TEA FUND', money(payslip.teaFund, symbol)],
+    ['Tea Fund', money(payslip.teaFund, symbol)],
   ];
 
   payRows.forEach((row, i) => {
-    const r = 14 + i;
+    const r = 12 + i;
     sheet.getCell(r, 1).value = row[0];
     sheet.getCell(r, 2).value = row[1];
     sheet.getCell(r, 3).value = row[2];
     sheet.getCell(r, 4).value = row[3];
-    sheet.getCell(r, 6).value = dedRows[i][0];
-    sheet.getCell(r, 7).value = dedRows[i][1];
-    for (const c of [1, 2, 3, 4, 6, 7]) {
-      sheet.getCell(r, c).border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' },
-      };
-    }
+    sheet.getCell(r, 2).alignment = { horizontal: 'right' };
+    sheet.getCell(r, 3).alignment = { horizontal: 'right' };
+    sheet.getCell(r, 4).alignment = { horizontal: 'right' };
   });
 
-  // Gross / Total deductions
-  const gr = 19;
-  sheet.getCell(gr, 1).value = 'Gross Pay';
-  sheet.getCell(gr, 4).value = money(payslip.grossPay, symbol);
-  sheet.getCell(gr, 6).value = 'Total Deductions';
-  sheet.getCell(gr, 7).value = money(payslip.totalDeductions, symbol);
-  for (const c of [1, 2, 3, 4, 6, 7]) {
-    sheet.getCell(gr, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEDD5' } };
-    sheet.getCell(gr, c).font = { bold: true };
-    sheet.getCell(gr, c).border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
+  sheet.getCell('A15').value = 'Gross Pay';
+  sheet.getCell('A15').font = { bold: true };
+  sheet.getCell('D15').value = money(payslip.grossPay, symbol);
+  sheet.getCell('D15').font = { bold: true };
+  sheet.getCell('D15').alignment = { horizontal: 'right' };
+
+  sheet.getCell('A17').value = 'Deductions';
+  sheet.getCell('A17').font = { bold: true, size: 12, color: { argb: 'FF2563EB' } };
+  sheet.getCell('A18').value = 'Description';
+  sheet.getCell('A18').font = { size: 8, color: { argb: 'FF94A3B8' } };
+  sheet.getCell('D18').value = 'Value';
+  sheet.getCell('D18').font = { size: 8, color: { argb: 'FF94A3B8' } };
+  sheet.getCell('D18').alignment = { horizontal: 'right' };
+
+  dedRows.forEach((row, i) => {
+    const r = 19 + i;
+    sheet.getCell(r, 1).value = row[0];
+    sheet.getCell(r, 4).value = row[1];
+    sheet.getCell(r, 4).alignment = { horizontal: 'right' };
+  });
+
+  sheet.getCell('A24').value = 'Total Deductions';
+  sheet.getCell('A24').font = { bold: true };
+  sheet.getCell('D24').value = money(payslip.totalDeductions, symbol);
+  sheet.getCell('D24').font = { bold: true };
+  sheet.getCell('D24').alignment = { horizontal: 'right' };
+
+  sheet.mergeCells('A26:D26');
+  sheet.getCell('A26').value = `NET PAY ${money(payslip.netPay, symbol)}`;
+  sheet.getCell('A26').font = { bold: true, size: 14, color: { argb: 'FF2563EB' } };
+  sheet.getCell('A26').alignment = { horizontal: 'right' };
+
+  sheet.getCell('A28').value = 'IOU Note';
+  sheet.getCell('A28').font = { bold: true, size: 10, color: { argb: 'FF2563EB' } };
+  sheet.getCell('A28').alignment = { horizontal: 'right' };
+  sheet.mergeCells('A29:D29');
+  sheet.getCell('A29').value =
+    `Amount: ${money(payslip.iouAmount, symbol)} | Paid: ${money(payslip.iouPaid, symbol)} |`;
+  sheet.getCell('A29').font = { size: 8, color: { argb: 'FF64748B' } };
+  sheet.getCell('A29').alignment = { horizontal: 'right' };
+  sheet.mergeCells('A30:D30');
+  sheet.getCell('A30').value =
+    `Balance: ${money(payslip.loanBalance, symbol)} | Payments: ${payslip.iouPaymentsCount || 0}`;
+  sheet.getCell('A30').font = { size: 8, color: { argb: 'FF64748B' } };
+  sheet.getCell('A30').alignment = { horizontal: 'right' };
+
+  if (payslip.comments) {
+    sheet.getCell('A32').value = `Note: ${payslip.comments}`;
+    sheet.getCell('A32').font = { size: 8, color: { argb: 'FF475569' } };
   }
-
-  // NET PAY
-  sheet.mergeCells('A21:G21');
-  const net = sheet.getCell('A21');
-  net.value = `NET PAY                                                          ${money(payslip.netPay, symbol)}`;
-  net.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
-  net.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
-  net.alignment = { vertical: 'middle' };
-  sheet.getRow(21).height = 28;
-
-  // IOU + Note
-  sheet.getCell('A23').value = 'IOU';
-  sheet.getCell('A23').font = { bold: true };
-  sheet.getCell('A24').value = 'Amount';
-  sheet.getCell('B24').value = money(payslip.iouAmount, symbol);
-  sheet.getCell('A25').value = 'Paid';
-  sheet.getCell('B25').value = money(payslip.iouPaid, symbol);
-  sheet.getCell('A26').value = 'Balance';
-  sheet.getCell('B26').value = money(payslip.loanBalance, symbol);
-
-  sheet.getCell('D23').value = 'Note:';
-  sheet.getCell('D23').font = { bold: true };
-  sheet.mergeCells('D24:G26');
-  sheet.getCell('D24').value = payslip.comments || '';
-  sheet.getCell('D24').alignment = { wrapText: true, vertical: 'top' };
-
-  sheet.getCell('A28').value = `No. of payments: ${payslip.iouPaymentsCount || 0}`;
-  sheet.getCell('A29').value = 'For:';
 
   return sheet;
 }
@@ -185,7 +181,7 @@ export async function buildPayslipWorksheet(workbook, payslip, settings) {
 export async function writePayslipExcel(res, payslipId) {
   const payslip = await Payslip.findById(payslipId).populate(
     'employee',
-    'employeeId fullName position'
+    'employeeId fullName position bank accountNumber npfNumber'
   );
   if (!payslip) throw new Error('Payslip not found');
   const settings = (await Settings.findOne()) || {};
@@ -201,21 +197,23 @@ export async function writePayslipExcel(res, payslipId) {
 export async function writePayslipPackExcel(res, payslips) {
   const settings = (await Settings.findOne()) || {};
   const workbook = new ExcelJS.Workbook();
-  if (!payslips.length) {
-    workbook.addWorksheet('Empty');
-  } else {
-    for (const p of payslips) {
+  for (const p of payslips) {
+    try {
       await buildPayslipWorksheet(workbook, p, settings);
+    } catch {
+      /* skip broken row */
     }
   }
   const first = payslips[0];
-  const months = MONTH_NAMES;
-  const label =
-    first?.type === 'weekly'
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  const filename =
+    first?.type === 'weekly' && first?.week
       ? `Payslips_${months[(first.month || 1) - 1]}_${first.year}_Week${first.week}.xlsx`
       : `Payslips_${months[(first?.month || 1) - 1]}_${first?.year || ''}_Monthly.xlsx`;
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="${label}"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   await workbook.xlsx.write(res);
   res.end();
 }

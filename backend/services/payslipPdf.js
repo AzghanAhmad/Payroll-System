@@ -1,22 +1,39 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
-import QRCode from 'qrcode';
 import Payslip from '../models/Payslip.js';
 import Settings from '../models/Settings.js';
 import { uploadRoot } from '../middleware/upload.js';
 import { getCurrencySymbol } from '../utils/currencies.js';
+import { getWeekPeriod } from '../utils/weekPeriod.js';
 
-const money = (n, symbol) => `${symbol}${Number(n || 0).toFixed(2)}`;
-const moneyOrDash = (n, symbol) =>
-  n == null || Number(n) === 0 ? `${symbol}-` : money(n, symbol);
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+const money = (n, symbol) => `${symbol}${Number(n || 0).toFixed(2)}`;
+const hrs = (n) => Number(n || 0).toFixed(2);
+
+/** Calendar date matching payroll week math (no TZ shift on end-of-day timestamps). */
+const fmtDate = (d) => {
+  if (!d) return '—';
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return '—';
+  return `${dt.getMonth() + 1}/${dt.getDate()}/${dt.getFullYear()}`;
+};
+
+const fmtRange = (start, end) => `${fmtDate(start)} – ${fmtDate(end)}`;
+
+/** Prefer recomputed Fri–Thu week bounds so Period / Pay Day stay correct. */
+const resolvePeriodDates = (payslip) => {
+  if (payslip.type === 'weekly' && payslip.year && payslip.month && payslip.week) {
+    const { start, end } = getWeekPeriod(payslip.year, payslip.month, payslip.week);
+    return { start, end, payDay: end };
+  }
+  return {
+    start: payslip.periodStart,
+    end: payslip.periodEnd,
+    payDay: payslip.payDay || payslip.periodEnd,
+  };
+};
 export const buildPayslipFilename = (payslip, ctx = {}) => {
   const emp = payslip.employee || {};
   const staffName =
@@ -82,53 +99,27 @@ export const resolvePayslipPdfPath = async (payslipIdOrDoc) => {
   return path.join(dir, path.basename(rel));
 };
 
-const resolveLogoPath = (settings) => {
-  if (!settings?.logo) return null;
-  const base = path.basename(String(settings.logo));
-  const candidates = [
-    path.join(uploadRoot, 'logos', base),
-    path.join(uploadRoot, base),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-};
-
-const fmtUsDate = (d) => (d ? new Date(d).toLocaleDateString('en-US') : '—');
-const fmtPayDay = (d) =>
-  d
-    ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-    : '—';
-
-/**
- * Absolute text helpers — never use PDFKit width+align (it overflows into neighbors).
- * Right-align by measuring the string and placing its left edge.
- */
 const at = (doc, str, x, y) => {
   doc.text(String(str ?? ''), x, y, { lineBreak: false });
 };
 
 const rightAt = (doc, str, rightEdge, y) => {
   const s = String(str ?? '');
-  const w = doc.widthOfString(s);
-  doc.text(s, rightEdge - w, y, { lineBreak: false });
+  doc.text(s, rightEdge - doc.widthOfString(s), y, { lineBreak: false });
 };
 
-const fitAt = (doc, str, x, y, maxW) => {
-  let s = String(str ?? '');
-  if (!maxW || maxW <= 0) {
-    at(doc, s, x, y);
-    return;
-  }
-  while (s.length > 1 && doc.widthOfString(s) > maxW) {
-    s = `${s.slice(0, -2)}…`;
-  }
-  at(doc, s, x, y);
+const hline = (doc, x1, x2, y, color = '#CBD5E1') => {
+  doc
+    .strokeColor(color)
+    .lineWidth(0.8)
+    .moveTo(x1, y)
+    .lineTo(x2, y)
+    .stroke();
 };
 
 /**
- * Alpha Group payslip layout (ss2).
+ * Client-preferred payslip look: clean header, pipe meta rows,
+ * Payments table + Deductions list, blue NET PAY, IOU note.
  */
 export const generatePayslipPdf = async (payslipId) => {
   const payslip = await Payslip.findById(payslipId).populate(
@@ -145,254 +136,162 @@ export const generatePayslipPdf = async (payslipId) => {
   const filename = buildPayslipFilename(payslip);
   const filePath = path.join(dir, filename);
 
-  const doc = new PDFDocument({ size: 'A4', margin: 40, autoFirstPage: true });
+  const doc = new PDFDocument({ size: 'A4', margin: 48, autoFirstPage: true });
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
   const emp = payslip.employee || {};
-  const left = 40;
-  const right = 555;
-  const pageW = right - left;
-  const now = new Date();
+  const left = 48;
+  const right = 547;
+
+  const company = settings.companyName || 'Alpha Cafe and Chemist';
+  const location = (settings.companyAddress || '').split(/[\n,]/)[0]?.trim() || '';
+
+  const npfPct = Math.round((Number(settings.employeeNpfRate ?? 0.1) || 0.1) * 100);
+  const accPct = Math.round((Number(settings.employeeAccRate ?? 0.01) || 0.01) * 100);
+  const otRate = payslip.otRate || (payslip.hourlyRate || 0) * (settings.otMultiplier || 1.5);
+  const dblRate = payslip.doubleRate || (payslip.hourlyRate || 0) * (settings.doubleMultiplier || 2);
+
+  const { start: periodStart, end: periodEnd, payDay } = resolvePeriodDates(payslip);
+  const weekLine =
+    payslip.type === 'weekly' && payslip.week
+      ? `Week ${payslip.week} · ${fmtRange(periodStart, periodEnd)}`
+      : fmtRange(periodStart, periodEnd);
 
   // —— Header ——
-  const logoPath = resolveLogoPath(settings);
-  const headerY = 40;
-  if (logoPath) {
-    try {
-      doc.image(logoPath, left, headerY, { fit: [120, 48] });
-    } catch {
-      doc.fillColor('#1D4ED8').fontSize(16).font('Helvetica-Bold');
-      at(doc, settings.companyName || 'ALPHA GROUP', left, headerY);
-    }
-  } else {
-    doc.fillColor('#1D4ED8').fontSize(16).font('Helvetica-Bold');
-    at(doc, settings.companyName || 'ALPHA GROUP', left, headerY);
-  }
+  doc.fillColor('#2563EB').fontSize(20).font('Helvetica-Bold');
+  at(doc, company, left, 48);
 
-  doc.fillColor('#334155').fontSize(9).font('Helvetica');
-  const contactX = 200;
-  fitAt(doc, settings.companyAddress || '', contactX, headerY + 4, 340);
-  const contactLine = [
-    settings.companyPhone ? `T: ${settings.companyPhone}` : null,
-    settings.companyEmail ? `E: ${settings.companyEmail}` : null,
-  ]
-    .filter(Boolean)
-    .join('  |  ');
-  if (contactLine) fitAt(doc, contactLine, contactX, headerY + 18, 340);
+  doc.fillColor('#64748B').fontSize(10).font('Helvetica');
+  if (location) at(doc, location, left, 72);
 
   doc.fillColor('#0F172A').fontSize(22).font('Helvetica-Bold');
-  at(doc, 'PAYSLIP', left, 98);
+  rightAt(doc, 'PAYSLIP', right, 48);
 
-  // —— Meta: left employee block | right period block (no shared rows) ——
-  const metaY = 130;
-  const leftColR = 290;
-  const rightColL = 310;
+  doc.fillColor('#64748B').fontSize(9).font('Helvetica');
+  rightAt(doc, weekLine, right, 74);
+
+  hline(doc, left, right, 96, '#E2E8F0');
+
+  // —— Employee block ——
+  let y = 112;
+  doc.fillColor('#0F172A').fontSize(11).font('Helvetica-Bold');
+  at(doc, `Employee: ${emp.fullName || '—'}`, left, y);
+  y += 22;
+
+  const metaLine = (txt) => {
+    doc.fillColor('#475569').fontSize(9).font('Helvetica');
+    at(doc, txt, left, y);
+    y += 14;
+  };
+
+  metaLine(
+    `Position: ${payslip.position || emp.position || '—'} | Department: ${payslip.departmentName || '—'}`
+  );
+  metaLine(`Period Start: ${fmtDate(periodStart)} | Period End: ${fmtDate(periodEnd)}`);
+  metaLine(
+    `Pay Day: ${fmtDate(payDay)} | Hourly Rate: ${money(payslip.hourlyRate, symbol)}`
+  );
+  metaLine(
+    `Bank: ${payslip.bank || emp.bank || '—'} | Account: ${payslip.accountNumber || emp.accountNumber || '—'} | NPF: ${payslip.npfNumber || emp.npfNumber || '—'}`
+  );
+  y += 10;
+
+  // —— Payments, then Deductions on the next section below ——
+  const payL = left;
+  const hoursR = left + 220;
+  const rateR = left + 320;
+  const valueR = right;
   const rowH = 16;
-
-  const L = (txt, x, y) => {
-    doc.fillColor('#64748B').font('Helvetica').fontSize(9);
-    at(doc, txt, x, y);
-  };
-  const V = (txt, x, y, maxW) => {
-    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(9);
-    fitAt(doc, txt || '—', x, y, maxW);
-  };
-
-  L('Employee:', left, metaY);
-  V(emp.fullName || '', left + 62, metaY, leftColR - left - 62);
-  L('Period:', rightColL, metaY);
-  V(
-    `${fmtUsDate(payslip.periodStart)} to ${fmtUsDate(payslip.periodEnd)}`,
-    rightColL + 50,
-    metaY,
-    right - rightColL - 50
-  );
-
-  L('Position:', left, metaY + rowH);
-  V(payslip.position || emp.position || '', left + 62, metaY + rowH, leftColR - left - 62);
-  L('Month:', rightColL, metaY + rowH);
-  V(MONTH_NAMES[(payslip.month || 1) - 1] || '', rightColL + 50, metaY + rowH, 100);
-  L('Date:', rightColL + 155, metaY + rowH);
-  V(fmtUsDate(now), rightColL + 185, metaY + rowH, right - rightColL - 185);
-
-  L('Department:', left, metaY + rowH * 2);
-  V(payslip.departmentName || '', left + 70, metaY + rowH * 2, leftColR - left - 70);
-  L('Pay Day:', rightColL, metaY + rowH * 2);
-  V(fmtPayDay(payslip.payDay), rightColL + 55, metaY + rowH * 2, right - rightColL - 55);
-
-  L('Week:', rightColL, metaY + rowH * 3);
-  V(
-    payslip.type === 'weekly' ? String(payslip.week ?? '—') : '—',
-    rightColL + 40,
-    metaY + rowH * 3,
-    36
-  );
-  L('Time:', rightColL + 90, metaY + rowH * 3);
-  V(
-    now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }),
-    rightColL + 120,
-    metaY + rowH * 3,
-    right - rightColL - 120
-  );
-
-  // —— Two panels with a hard gap ——
-  // A4 content: 40 … 555. Split ~55% / 45% with 16pt gutter.
-  const tableTop = metaY + rowH * 4 + 12;
-  const gutter = 16;
-  const payL = left;           // 40
-  const payR = 300;            // exclusive edge of payments box
-  const dedL = payR + gutter;  // 316
-  const dedR = right;          // 555
-  const payW = payR - payL;    // 260
-  const dedW = dedR - dedL;    // 239
-  const headerH = 18;
-  const rowH2 = 18;
-
-  // Payments columns (all x coords strictly < payR)
-  const cName = payL + 6;
-  const cHoursR = payL + 130; // right edge of Hours
-  const cRateR = payL + 188;  // right edge of Rate
-  const cValueR = payR - 6;   // right edge of Value
-
-  // Deductions columns
-  const dName = dedL + 6;
-  const dValueR = dedR - 6;
-
-  const strokeBox = (x, y, w, h, stroke = '#E2E8F0') => {
-    doc.rect(x, y, w, h).stroke(stroke);
-  };
-
-  strokeBox(payL, tableTop, payW, headerH, '#CBD5E1');
-  strokeBox(dedL, tableTop, dedW, headerH, '#CBD5E1');
-
-  doc.fillColor('#0F172A').fontSize(9).font('Helvetica-Bold');
-  at(doc, 'Payments', cName, tableTop + 5);
-  rightAt(doc, 'Hours', cHoursR, tableTop + 5);
-  rightAt(doc, 'Rate', cRateR, tableTop + 5);
-  rightAt(doc, 'Value', cValueR, tableTop + 5);
-  at(doc, 'Deductions', dName, tableTop + 5);
-  rightAt(doc, 'Value', dValueR, tableTop + 5);
 
   const payRows = [
     ['Normal Time', payslip.normalHours, payslip.hourlyRate, payslip.normalPay],
-    ['Overtime', payslip.otHours, payslip.otRate || (payslip.hourlyRate || 0) * 1.5, payslip.otPay],
-    ['Double Time', payslip.doubleHours, payslip.doubleRate || (payslip.hourlyRate || 0) * 2, payslip.doublePay],
-    ['IOU', null, null, null],
-    ['Tea Fund', null, null, null],
+    ['Overtime (T 1/2)', payslip.otHours, otRate, payslip.otPay],
+    ['Double Time (T2)', payslip.doubleHours, dblRate, payslip.doublePay],
   ];
+
   const dedRows = [
-    ['SNPF', payslip.employeeNpf],
-    ['ACC', payslip.employeeAcc],
-    ['PAYE', payslip.tax],
+    [`NPF / SNPF (${npfPct}%)`, payslip.employeeNpf],
+    [`ACC (${accPct}%)`, payslip.employeeAcc],
+    ['Tax / PAYE', payslip.tax],
     ['IOU', payslip.iouDeduction],
-    ['TEA FUND', payslip.teaFund],
+    ['Tea Fund', payslip.teaFund],
   ];
 
-  let y = tableTop + headerH;
-  for (let i = 0; i < 5; i++) {
-    strokeBox(payL, y, payW, rowH2);
-    strokeBox(dedL, y, dedW, rowH2);
+  doc.fillColor('#2563EB').fontSize(12).font('Helvetica-Bold');
+  at(doc, 'Payments', payL, y);
+  y += 18;
 
-    const [pLabel, hours, rate, val] = payRows[i];
-    const [dLabel, dVal] = dedRows[i];
-    const ty = y + 5;
+  doc.fillColor('#94A3B8').fontSize(8).font('Helvetica');
+  at(doc, 'Description', payL, y);
+  rightAt(doc, 'Hours', hoursR, y);
+  rightAt(doc, 'Rate', rateR, y);
+  rightAt(doc, 'Value', valueR, y);
+  y += 12;
+  hline(doc, payL, valueR, y, '#E2E8F0');
+  y += 8;
 
-    doc.fillColor('#334155').font('Helvetica').fontSize(9);
-    fitAt(doc, pLabel, cName, ty, cHoursR - cName - 40);
-
-    if (hours != null) {
-      rightAt(doc, Number(hours).toFixed(2), cHoursR, ty);
-    }
-
-    if (rate != null && Number(rate)) {
-      rightAt(doc, money(rate, symbol), cRateR, ty);
-    } else if (hours != null) {
-      rightAt(doc, moneyOrDash(rate, symbol), cRateR, ty);
-    }
-
-    const blankPay = pLabel === 'IOU' || pLabel === 'Tea Fund';
-    if (!blankPay && val != null) {
-      rightAt(doc, money(val, symbol), cValueR, ty);
-    } else if (blankPay && val) {
-      rightAt(doc, money(val, symbol), cValueR, ty);
-    }
-
-    at(doc, dLabel, dName, ty);
-    rightAt(doc, money(dVal, symbol), dValueR, ty);
-    y += rowH2;
-  }
-
-  // Gross / Total deductions
-  const sumH = 20;
-  doc.rect(payL, y, payW, sumH).fillAndStroke('#FFEDD5', '#FDBA74');
-  doc.rect(dedL, y, dedW, sumH).fillAndStroke('#FFEDD5', '#FDBA74');
-  doc.fillColor('#9A3412').font('Helvetica-Bold').fontSize(9);
-  at(doc, 'Gross Pay', cName, y + 6);
-  rightAt(doc, money(payslip.grossPay, symbol), cValueR, y + 6);
-  at(doc, 'Total Deductions', dName, y + 6);
-  rightAt(doc, money(payslip.totalDeductions, symbol), dValueR, y + 6);
-  y += sumH + 10;
-
-  // NET PAY
-  doc.rect(left, y, pageW, 28).fill('#1E40AF');
-  doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold');
-  at(doc, 'NET PAY', left + 12, y + 8);
-  rightAt(doc, money(payslip.netPay, symbol), right - 12, y + 8);
-  y += 40;
-
-  // IOU + Note
-  doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold');
-  at(doc, 'IOU', left, y);
-  y += 14;
-  doc.fontSize(9).font('Helvetica');
-  const iouBoxW = 220;
-  [
-    ['Amount', money(payslip.iouAmount, symbol)],
-    ['Paid', money(payslip.iouPaid, symbol)],
-    ['Balance', money(payslip.loanBalance, symbol)],
-  ].forEach(([lab, val], i) => {
-    const iy = y + i * 16;
-    strokeBox(left, iy, iouBoxW, 16, '#CBD5E1');
-    doc.fillColor('#64748B');
-    at(doc, lab, left + 6, iy + 4);
-    doc.fillColor('#0F172A');
-    rightAt(doc, val, left + iouBoxW - 6, iy + 4);
+  doc.fillColor('#0F172A').fontSize(9).font('Helvetica');
+  payRows.forEach(([label, hours, rate, val]) => {
+    at(doc, label, payL, y);
+    rightAt(doc, hrs(hours), hoursR, y);
+    rightAt(doc, money(rate, symbol), rateR, y);
+    rightAt(doc, money(val, symbol), valueR, y);
+    y += rowH;
   });
 
-  doc.fillColor('#0F172A').font('Helvetica-Bold');
-  at(doc, 'Note:', dedL, y);
-  doc.font('Helvetica').fillColor('#475569');
-  doc.text(payslip.comments || '', dedL, y + 14, { width: dedW, height: 48 });
+  y += 4;
+  hline(doc, payL, valueR, y, '#E2E8F0');
+  y += 8;
+  doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold');
+  at(doc, 'Gross Pay', payL, y);
+  rightAt(doc, money(payslip.grossPay, symbol), valueR, y);
+  y += 28;
 
-  y += 58;
-  doc.fillColor('#334155').fontSize(9).font('Helvetica');
-  at(doc, `No. of payments: ${payslip.iouPaymentsCount || 0}`, left, y);
-  at(doc, 'For:', left, y + 14);
+  doc.fillColor('#2563EB').fontSize(12).font('Helvetica-Bold');
+  at(doc, 'Deductions', payL, y);
+  y += 18;
 
-  try {
-    const company = settings.companyName || 'Payroll';
-    const period =
-      payslip.periodLabel ||
-      (payslip.type === 'weekly' && payslip.week
-        ? `Week ${payslip.week}`
-        : `${payslip.month}/${payslip.year}`);
-    const qrText = [
-      `${company} — Official Payslip`,
-      `Employee: ${emp.fullName || emp.employeeId || '—'}`,
-      `Period: ${period}`,
-      `Net Pay: ${money(payslip.netPay, symbol)}`,
-    ].join('\n');
-    const qrData = await QRCode.toDataURL(qrText, { errorCorrectionLevel: 'M', margin: 1, width: 160 });
-    const qrBuf = Buffer.from(qrData.replace(/^data:image\/png;base64,/, ''), 'base64');
-    doc.image(qrBuf, left, 720, { width: 56 });
-    doc.fontSize(8).fillColor('#94A3B8');
-    at(doc, 'Digitally generated payslip', left + 66, 740);
-    if (settings.digitalSignature) {
-      at(doc, `Authorized: ${settings.digitalSignature}`, left + 66, 752);
-    }
-  } catch {
-    /* optional */
+  doc.fillColor('#94A3B8').fontSize(8).font('Helvetica');
+  at(doc, 'Description', payL, y);
+  rightAt(doc, 'Value', valueR, y);
+  y += 12;
+  hline(doc, payL, valueR, y, '#E2E8F0');
+  y += 8;
+
+  doc.fillColor('#0F172A').fontSize(9).font('Helvetica');
+  dedRows.forEach(([label, val]) => {
+    at(doc, label, payL, y);
+    rightAt(doc, money(val, symbol), valueR, y);
+    y += rowH;
+  });
+
+  y += 4;
+  hline(doc, payL, valueR, y, '#E2E8F0');
+  y += 8;
+  doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold');
+  at(doc, 'Total Deductions', payL, y);
+  rightAt(doc, money(payslip.totalDeductions, symbol), valueR, y);
+  y += 32;
+
+  // —— NET PAY ——
+  doc.fillColor('#2563EB').fontSize(16).font('Helvetica-Bold');
+  rightAt(doc, `NET PAY ${money(payslip.netPay, symbol)}`, right, y);
+  y += 36;
+
+  // —— IOU Note (bottom-right) ——
+  doc.fillColor('#2563EB').fontSize(10).font('Helvetica-Bold');
+  rightAt(doc, 'IOU Note', right, y);
+  y += 16;
+  doc.fillColor('#64748B').fontSize(8).font('Helvetica');
+  const iou1 = `Amount: ${money(payslip.iouAmount, symbol)} | Paid: ${money(payslip.iouPaid, symbol)} |`;
+  const iou2 = `Balance: ${money(payslip.loanBalance, symbol)} | Payments: ${payslip.iouPaymentsCount || 0}`;
+  rightAt(doc, iou1, right, y);
+  rightAt(doc, iou2, right, y + 12);
+
+  if (payslip.comments) {
+    doc.fillColor('#475569').fontSize(8).font('Helvetica');
+    at(doc, `Note: ${payslip.comments}`, left, y);
   }
 
   doc.end();
