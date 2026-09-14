@@ -43,12 +43,12 @@ const settingsSchema = new mongoose.Schema(
     npfZone: { type: String, default: '' },
     accEmpNumber1: { type: String, default: '' },
     accEmpNumber2: { type: String, default: '' },
+    // Reflects Samoa P4 practice: $576 free / fortnight @ 20% → ~$14,976 / year free then 20%
     taxBrackets: {
       type: [taxBracketSchema],
       default: [
-        { min: 0, max: 15000, rate: 0 },
-        { min: 15000, max: 25000, rate: 0.1 },
-        { min: 25000, max: null, rate: 0.2 },
+        { min: 0, max: 14976, rate: 0 },
+        { min: 14976, max: null, rate: 0.2 },
       ],
     },
     digitalSignature: { type: String, default: '' },

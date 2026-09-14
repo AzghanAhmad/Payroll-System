@@ -6,6 +6,7 @@ import Loan from '../models/Loan.js';
 import { asyncHandler, round2 } from '../utils/helpers.js';
 import { AppError } from '../middleware/errorMiddleware.js';
 import { getWeekPeriod, formatPeriodLabel } from '../utils/weekPeriod.js';
+import { calcFortnightlyPaye } from '../services/payrollCalculator.js';
 
 const getSettings = async () => {
   let s = await Settings.findOne();
@@ -21,13 +22,20 @@ const normalizeAccDept = (name) => {
   return String(name || 'Other');
 };
 
-const recalcPayeStatutory = (row, syncBaseFromGross = true) => {
+const recalcPayeStatutory = (row, syncBaseFromGross = true, recalculateTax = true) => {
   row.payPeriod1 = round2(Number(row.payPeriod1) || 0);
   row.payPeriod2 = round2(Number(row.payPeriod2) || 0);
   row.payPeriod3 = round2(Number(row.payPeriod3) || 0);
-  row.taxPeriod1 = round2(Number(row.taxPeriod1) || 0);
-  row.taxPeriod2 = round2(Number(row.taxPeriod2) || 0);
-  row.taxPeriod3 = round2(Number(row.taxPeriod3) || 0);
+  if (recalculateTax) {
+    // P4 periods are fortnightly — use authority PAYE rule, not summed weekly tax
+    row.taxPeriod1 = calcFortnightlyPaye(row.payPeriod1);
+    row.taxPeriod2 = calcFortnightlyPaye(row.payPeriod2);
+    row.taxPeriod3 = calcFortnightlyPaye(row.payPeriod3);
+  } else {
+    row.taxPeriod1 = round2(Number(row.taxPeriod1) || 0);
+    row.taxPeriod2 = round2(Number(row.taxPeriod2) || 0);
+    row.taxPeriod3 = round2(Number(row.taxPeriod3) || 0);
+  }
   row.grossTotal = round2(row.payPeriod1 + row.payPeriod2 + row.payPeriod3);
   row.totalTax = round2(row.taxPeriod1 + row.taxPeriod2 + row.taxPeriod3);
   if (syncBaseFromGross) {
@@ -130,9 +138,10 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     const payPeriod1 = round2(w[1].gross + w[2].gross);
     const payPeriod2 = round2(w[3].gross + w[4].gross);
     const payPeriod3 = round2(w[5].gross);
-    const taxPeriod1 = round2(w[1].tax + w[2].tax);
-    const taxPeriod2 = round2(w[3].tax + w[4].tax);
-    const taxPeriod3 = round2(w[5].tax);
+    // Recalculate PAYE per fortnightly period (authority formula), not weekly tax sums
+    const taxPeriod1 = calcFortnightlyPaye(payPeriod1);
+    const taxPeriod2 = calcFortnightlyPaye(payPeriod2);
+    const taxPeriod3 = calcFortnightlyPaye(payPeriod3);
     const totalTax = round2(taxPeriod1 + taxPeriod2 + taxPeriod3);
     const grossTotal = round2(payPeriod1 + payPeriod2 + payPeriod3);
     const baseAmount = grossTotal;
@@ -229,7 +238,13 @@ export const getStatutorySheets = asyncHandler(async (req, res) => {
     const hasBaseOverride = overrides.some(
       (o) => o.sheet === 'paye' && o.rowKey === empKey && o.field === 'baseAmount'
     );
-    recalcPayeStatutory(r, !hasBaseOverride);
+    const hasTaxOverride = overrides.some(
+      (o) =>
+        o.sheet === 'paye' &&
+        o.rowKey === empKey &&
+        ['taxPeriod1', 'taxPeriod2', 'taxPeriod3'].includes(o.field)
+    );
+    recalcPayeStatutory(r, !hasBaseOverride, !hasTaxOverride);
   }
   for (const r of npf) {
     r.total = round2((r.weeks || []).reduce((s, x) => s + (Number(x.employee) || 0) + (Number(x.employer) || 0), 0));

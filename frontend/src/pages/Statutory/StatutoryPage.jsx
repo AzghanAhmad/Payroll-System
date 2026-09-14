@@ -47,6 +47,15 @@ const headerInput =
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 
+/** Samoa P4 PAYE: $576 free per fortnight, then 20% */
+const FORTNIGHTLY_TAX_FREE = 576;
+const PAYE_RATE = 0.2;
+const calcFortnightlyPaye = (gross) => {
+  const g = Number(gross) || 0;
+  if (g <= 0) return 0;
+  return round2(Math.max(0, g - FORTNIGHTLY_TAX_FREE) * PAYE_RATE);
+};
+
 const normalizeAccDept = (name) => {
   const n = String(name || '').toLowerCase();
   if (/caf[eé]/.test(n)) return 'Cafe';
@@ -68,13 +77,19 @@ const computeAccDeptTotals = (rows = []) => {
   return { all: round2(all), cafe: round2(cafe), chemist: round2(chemist) };
 };
 
-const recalcPayeRow = (row, syncBaseFromGross = true) => {
+const recalcPayeRow = (row, syncBaseFromGross = true, recalculateTax = true) => {
   row.payPeriod1 = round2(row.payPeriod1);
   row.payPeriod2 = round2(row.payPeriod2);
   row.payPeriod3 = round2(row.payPeriod3);
-  row.taxPeriod1 = round2(row.taxPeriod1);
-  row.taxPeriod2 = round2(row.taxPeriod2);
-  row.taxPeriod3 = round2(row.taxPeriod3);
+  if (recalculateTax) {
+    row.taxPeriod1 = calcFortnightlyPaye(row.payPeriod1);
+    row.taxPeriod2 = calcFortnightlyPaye(row.payPeriod2);
+    row.taxPeriod3 = calcFortnightlyPaye(row.payPeriod3);
+  } else {
+    row.taxPeriod1 = round2(row.taxPeriod1);
+    row.taxPeriod2 = round2(row.taxPeriod2);
+    row.taxPeriod3 = round2(row.taxPeriod3);
+  }
   row.grossTotal = round2(row.payPeriod1 + row.payPeriod2 + row.payPeriod3);
   row.totalTax = round2(row.taxPeriod1 + row.taxPeriod2 + row.taxPeriod3);
   if (syncBaseFromGross) row.baseAmount = row.grossTotal;
@@ -183,7 +198,9 @@ export default function StatutoryPage() {
       if (!row) return prev;
       row[field] = value;
       const syncBase = field !== 'baseAmount';
-      recalcPayeRow(row, syncBase);
+      const isPayEdit = ['payPeriod1', 'payPeriod2', 'payPeriod3'].includes(field);
+      // Recalc tax from pay when pay changes; keep manual tax edits as-is
+      recalcPayeRow(row, syncBase, isPayEdit);
       return next;
     });
     queueOverride({ sheet: 'paye', rowKey: String(employeeId), field, value, week: 0 });

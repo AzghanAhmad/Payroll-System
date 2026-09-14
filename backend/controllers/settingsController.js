@@ -5,9 +5,47 @@ import {
   applyPayrollRulesEverywhere,
 } from '../services/applyPayrollRules.js';
 
+/** Samoa P4 PAYE brackets: $14,976 free then 20% (≡ $576 free / fortnight @ 20%) */
+const SAMOA_P4_TAX_BRACKETS = [
+  { min: 0, max: 14976, rate: 0 },
+  { min: 14976, max: null, rate: 0.2 },
+];
+
+const isLegacyTaxBrackets = (brackets) => {
+  if (!Array.isArray(brackets) || brackets.length < 2) return true;
+  const hasMidBand = brackets.some(
+    (b) => Number(b.rate) === 0.1 || (Number(b.min) === 15000 && Number(b.max) === 25000)
+  );
+  const hasNewFree = brackets.some((b) => Number(b.max) === 14976 && Number(b.rate) === 0);
+  return hasMidBand || !hasNewFree;
+};
+
 export const getSettings = asyncHandler(async (req, res) => {
   let settings = await Settings.findOne();
   if (!settings) settings = await Settings.create({});
+
+  // One-time migrate away from old progressive 0/10/20% brackets so stored payslips refresh
+  if (isLegacyTaxBrackets(settings.taxBrackets)) {
+    const before = settings.toObject();
+    settings.taxBrackets = SAMOA_P4_TAX_BRACKETS;
+    await settings.save();
+
+    // Drop saved P4 tax cell overrides so periods recompute from the authority formula
+    try {
+      const StatutoryOverride = (await import('../models/StatutoryOverride.js')).default;
+      await StatutoryOverride.deleteMany({
+        sheet: 'paye',
+        field: { $in: ['taxPeriod1', 'taxPeriod2', 'taxPeriod3', 'totalTax'] },
+      });
+    } catch {
+      /* ignore if model unavailable */
+    }
+
+    if (payrollRulesChanged(before, settings.toObject())) {
+      await applyPayrollRulesEverywhere(settings);
+    }
+  }
+
   res.json(settings);
 });
 

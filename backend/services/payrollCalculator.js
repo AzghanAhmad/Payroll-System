@@ -1,14 +1,26 @@
 import { round2 } from '../utils/helpers.js';
 
+/**
+ * Samoa P4 PAYE (matches Ministry filing sheets):
+ * tax-free $576 per fortnight, then flat 20% on the remainder.
+ * Verified against authority samples (e.g. $640 → $12.80).
+ */
+export const FORTNIGHTLY_TAX_FREE = 576;
+export const PAYE_RATE = 0.2;
+
+/** PAYE on a fortnightly (P4 period) gross amount */
+export const calcFortnightlyPaye = (fortnightGross) => {
+  const gross = Number(fortnightGross) || 0;
+  if (gross <= 0) return 0;
+  return round2(Math.max(0, gross - FORTNIGHTLY_TAX_FREE) * PAYE_RATE);
+};
+
 export const calcTax = (annualizedGross, brackets = []) => {
   let tax = 0;
-  let remaining = annualizedGross;
   const sorted = [...brackets].sort((a, b) => a.min - b.min);
 
   for (const bracket of sorted) {
-    if (remaining <= 0) break;
     const upper = bracket.max == null ? Infinity : bracket.max;
-    const taxableInBracket = Math.min(remaining, Math.max(0, upper - bracket.min));
     if (annualizedGross > bracket.min) {
       const amount = Math.min(annualizedGross, upper) - bracket.min;
       if (amount > 0) tax += amount * bracket.rate;
@@ -17,11 +29,16 @@ export const calcTax = (annualizedGross, brackets = []) => {
   return round2(tax);
 };
 
-/** Approximate weekly PAYE from weekly gross using annual brackets / 52 */
-export const calcPeriodTax = (periodGross, brackets, periodsPerYear = 52) => {
-  const annual = periodGross * periodsPerYear;
-  const annualTax = calcTax(annual, brackets);
-  return round2(annualTax / periodsPerYear);
+/**
+ * Period PAYE scaled from the fortnightly P4 rule.
+ * Weekly (52): free allowance $288. Fortnightly (26): $576.
+ */
+export const calcPeriodTax = (periodGross, _brackets, periodsPerYear = 52) => {
+  const periods = Number(periodsPerYear) > 0 ? Number(periodsPerYear) : 52;
+  const freeAllowance = (FORTNIGHTLY_TAX_FREE * 26) / periods;
+  const gross = Number(periodGross) || 0;
+  if (gross <= 0) return 0;
+  return round2(Math.max(0, gross - freeAllowance) * PAYE_RATE);
 };
 
 /**
