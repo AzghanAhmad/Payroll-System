@@ -22,6 +22,13 @@ import SchedulePage from '@/pages/Schedule/SchedulePage';
 import CalendarPage from '@/pages/Calendar/CalendarPage';
 import StatutoryPage from '@/pages/Statutory/StatutoryPage';
 import IouTrackerPage from '@/pages/IouTracker/IouTrackerPage';
+import ModuleSelectPage from '@/pages/Hub/ModuleSelectPage';
+import StockDashboardPage from '@/pages/Stock/StockDashboardPage';
+import ProductsPage from '@/pages/Stock/ProductsPage';
+import CategoriesPage from '@/pages/Stock/CategoriesPage';
+import StockBalanceSheetPage from '@/pages/Stock/StockBalanceSheetPage';
+import VendorsPage from '@/pages/Stock/VendorsPage';
+import EmployeeSalesPage from '@/pages/Stock/EmployeeSalesPage';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -54,7 +61,9 @@ export default function AppRoutes() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Route>
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/hub" element={<ModuleSelectPage />} />
+        <Route path="/" element={<ModuleSelectPage />} />
+        <Route path="/payroll-dashboard" element={<DashboardPage />} />
         <Route path="/employees" element={<EmployeesPage />} />
         <Route path="/staff" element={<StaffInfoPage />} />
         <Route path="/timesheets" element={<TimesheetsPage />} />
@@ -77,8 +86,15 @@ export default function AppRoutes() {
           <Route path="statutory" element={<StatutorySettings />} />
           <Route path="departments" element={<DepartmentsSettings />} />
         </Route>
+        {/* Stock Management Routes */}
+        <Route path="/stock" element={<StockDashboardPage />} />
+        <Route path="/stock/products" element={<ProductsPage />} />
+        <Route path="/stock/categories" element={<CategoriesPage />} />
+        <Route path="/stock/balance-sheet" element={<StockBalanceSheetPage />} />
+        <Route path="/stock/vendors" element={<VendorsPage />} />
+        <Route path="/stock/employee-sales" element={<EmployeeSalesPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/hub" replace />} />
     </Routes>
   );
 }

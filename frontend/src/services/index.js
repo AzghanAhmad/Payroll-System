@@ -185,3 +185,44 @@ export const statutoryApi = {
   exportIouPdf: (params) =>
     api.get('/statutory/iou-tracker/export/pdf', { params, responseType: 'blob' }),
 };
+
+export const stockApi = {
+  getDashboardStats: () => api.get('/stock/dashboard-stats').then((r) => r.data),
+  // Categories
+  listCategories: () => api.get('/stock/categories').then((r) => r.data),
+  createCategory: (data) => api.post('/stock/categories', data).then((r) => r.data),
+  updateCategory: (id, data) => api.put(`/stock/categories/${id}`, data).then((r) => r.data),
+  deleteCategory: (id) => api.delete(`/stock/categories/${id}`).then((r) => r.data),
+  // Products
+  listProducts: (params) => api.get('/stock/products', { params }).then((r) => r.data),
+  getProduct: (id) => api.get(`/stock/products/${id}`).then((r) => r.data),
+  createProduct: (data) => api.post('/stock/products', data).then((r) => r.data),
+  updateProduct: (id, data) => api.put(`/stock/products/${id}`, data).then((r) => r.data),
+  deleteProduct: (id) => api.delete(`/stock/products/${id}`).then((r) => r.data),
+  // Stock adjustments & Balance Sheet
+  adjustStock: (data) => api.post('/stock/adjust', data).then((r) => r.data),
+  batchUpdateBalanceSheet: (rows) => api.post('/stock/balance-sheet', { rows }).then((r) => r.data),
+  movements: (params) => api.get('/stock/movements', { params }).then((r) => r.data),
+  // Export & Import
+  exportExcel: () => api.get('/stock/products/export', { responseType: 'blob' }),
+  importExcel: (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post('/stock/products/import', fd, { headers: { 'Content-Type': undefined } }).then((r) => r.data);
+  },
+};
+
+export const vendorApi = {
+  list: (params) => api.get('/vendors', { params }).then((r) => r.data),
+  create: (data) => api.post('/vendors', data).then((r) => r.data),
+  update: (id, data) => api.put(`/vendors/${id}`, data).then((r) => r.data),
+  delete: (id) => api.delete(`/vendors/${id}`).then((r) => r.data),
+};
+
+export const stockSalesApi = {
+  list: (params) => api.get('/stock-sales', { params }).then((r) => r.data),
+  create: (data) => api.post('/stock-sales', data).then((r) => r.data),
+  topEmployees: (params) => api.get('/stock-sales/top-employees', { params }).then((r) => r.data),
+  cancel: (id) => api.delete(`/stock-sales/${id}`).then((r) => r.data),
+};
+

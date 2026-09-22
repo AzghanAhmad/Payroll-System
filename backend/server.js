@@ -24,6 +24,9 @@ import leaveRoutes from './routes/leaveRoutes.js';
 import calendarRoutes from './routes/calendarRoutes.js';
 import payrollOpsRoutes from './routes/payrollOpsRoutes.js';
 import statutoryRoutes from './routes/statutoryRoutes.js';
+import stockRoutes from './routes/stockRoutes.js';
+import vendorRoutes from './routes/vendorRoutes.js';
+import stockSalesRoutes from './routes/stockSalesRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -112,6 +115,9 @@ app.use('/api/leave', leaveRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/ops', payrollOpsRoutes);
 app.use('/api/statutory', statutoryRoutes);
+app.use('/api/stock', stockRoutes);
+app.use('/api/vendors', vendorRoutes);
+app.use('/api/stock-sales', stockSalesRoutes);
 
 if (serveSpa) {
   app.use(

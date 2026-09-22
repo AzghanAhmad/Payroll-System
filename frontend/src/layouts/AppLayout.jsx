@@ -147,7 +147,26 @@ export default function AppLayout({ children, title }) {
               className="h-10 w-auto max-w-[160px] object-contain"
             />
           </div>
-          <p className="text-xs text-slate-400 mt-2 pl-0.5">Payroll System</p>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-xs text-slate-400 pl-0.5">Payroll System</p>
+            <Link
+              to="/hub"
+              className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 bg-white/10 px-2 py-0.5 rounded-md transition-colors"
+            >
+              Hub &rarr;
+            </Link>
+          </div>
+        </div>
+
+        {/* Quick switch to Stock Management */}
+        <div className="px-3 pt-3">
+          <Link
+            to="/stock"
+            className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-medium transition-colors"
+          >
+            <span>📦 Stock Suite</span>
+            <span className="text-[10px] text-sky-400">Open &rarr;</span>
+          </Link>
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
