@@ -74,15 +74,46 @@ export default function WhatsAppShareModal({
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-semibold text-slate-700">
-                Message (Editable Preview)
+                Message Preview (Editable)
               </label>
-              <span className="text-[10px] text-slate-400">You can edit this before sending</span>
+              <span className="text-[10px] text-slate-400">Edit or format before sending</span>
             </div>
+            
+            {/* Formatted live preview */}
+            <div className="mb-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+              {messageText.split('\n').map((line, idx) => {
+                // Render lines starting with asterisk or bold markers as true bold HTML
+                const isHeader = line.startsWith('*') && line.endsWith('*') && line.length > 2;
+                if (isHeader) {
+                  return (
+                    <div key={idx} className="font-bold text-slate-900 text-sm py-0.5">
+                      {line.replace(/^\*+|\*+$/g, '')}
+                    </div>
+                  );
+                }
+                const parts = line.split(/(\*[^*]+\*)/g);
+                return (
+                  <div key={idx} className="min-h-[1.25em]">
+                    {parts.map((p, i) => {
+                      if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+                        return <strong key={i} className="font-bold text-slate-900">{p.slice(1, -1)}</strong>;
+                      }
+                      if (p.startsWith('_') && p.endsWith('_') && p.length > 2) {
+                        return <span key={i} className="italic text-slate-500">{p.slice(1, -1)}</span>;
+                      }
+                      return <span key={i}>{p}</span>;
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+
             <textarea
-              rows={6}
+              rows={4}
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
-              className="w-full text-xs p-3.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-slate-50 font-mono text-slate-800 resize-y"
+              placeholder="Edit your message text here..."
+              className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white font-mono text-slate-800 resize-y"
             />
           </div>
 

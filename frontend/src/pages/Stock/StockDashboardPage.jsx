@@ -35,16 +35,16 @@ export default function StockDashboardPage() {
 
   const handleShareStockSummary = () => {
     const lowStockItemsText = (stats?.lowStockItems || [])
-      .map((it) => `• ${it.name}: ${it.currentQuantity} ${it.unit} (Min: ${it.minQuantity})`)
+      .map((it) => `- ${it.name}: ${it.currentQuantity} ${it.unit} (Min: ${it.minQuantity})`)
       .join('\n');
 
     const message = `*Alpha Group Stock Status Update*\n` +
-      `📅 Date: ${new Date().toLocaleDateString()}\n\n` +
-      `📦 Total Products: ${stats?.totalProducts ?? 0}\n` +
-      `⚠️ Low Stock Items: ${stats?.lowStockCount ?? 0}\n` +
-      `🚫 Out of Stock: ${stats?.outOfStockCount ?? 0}\n` +
-      `💰 Inventory Value: $${(stats?.totalInventoryValue || 0).toLocaleString()}\n\n` +
-      (stats?.lowStockCount > 0 ? `*Items needing restock:*\n${lowStockItemsText}\n\n` : '') +
+      `Date: ${new Date().toLocaleDateString()}\n\n` +
+      `Total Products: ${stats?.totalProducts ?? 0}\n` +
+      `Low Stock Items: ${stats?.lowStockCount ?? 0}\n` +
+      `Out of Stock: ${stats?.outOfStockCount ?? 0}\n` +
+      `Inventory Value: $${(stats?.totalInventoryValue || 0).toLocaleString()}\n\n` +
+      (stats?.lowStockCount > 0 ? `*Items Needing Restock:*\n${lowStockItemsText}\n\n` : '') +
       `_Generated via Alpha Group Enterprise Suite_`;
 
     setWaPhone('');
@@ -58,11 +58,11 @@ export default function StockDashboardPage() {
     const message = `*URGENT: Low Stock Reorder Alert*\n\n` +
       `Hello ${vendorName},\n` +
       `We need to place a restock order for:\n` +
-      `📦 Product: *${item.name}*\n` +
-      (item.sku ? `🏷️ SKU: ${item.sku}\n` : '') +
-      `⚖️ Current Remaining Stock: *${item.currentQuantity} ${item.unit}*\n` +
-      `⚠️ Threshold Level: ${item.minQuantity} ${item.unit}\n` +
-      `📈 Max Capacity: ${item.maxQuantity} ${item.unit}\n\n` +
+      `Product: *${item.name}*\n` +
+      (item.sku ? `SKU: ${item.sku}\n` : '') +
+      `Current Remaining Stock: *${item.currentQuantity} ${item.unit}*\n` +
+      `Threshold Level: ${item.minQuantity} ${item.unit}\n` +
+      `Max Capacity: ${item.maxQuantity} ${item.unit}\n\n` +
       `Please let us know your earliest delivery date and unit price quotation.\n\n` +
       `Thank you,\nAlpha Group Management`;
 

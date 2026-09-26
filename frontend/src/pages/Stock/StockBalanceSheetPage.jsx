@@ -125,7 +125,7 @@ export default function StockBalanceSheetPage() {
     }).slice(0, 25).join('\n');
 
     const msg = `*Alpha Group Stock Balance Sheet*\n` +
-      `📅 Date: ${new Date().toLocaleDateString()}\n\n` +
+      `Date: ${new Date().toLocaleDateString()}\n\n` +
       `${summary}\n\n` +
       `_Automatic calculation: End Balance = Start + In - Out_`;
 

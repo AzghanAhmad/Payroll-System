@@ -48,8 +48,8 @@ export default function StockHistoryPage() {
       return `• ${new Date(m.date || m.createdAt).toLocaleDateString()} | ${m.product?.name}: ${typeLabel} ${m.quantity} ${m.product?.unit || 'pcs'} | End: ${m.endBalance} (${m.reason || 'Movement'})`;
     }).join('\n');
 
-    const msg = `📜 *Alpha Group Stock Movement History*\n` +
-      `📅 Generated: ${new Date().toLocaleDateString()}\n\n` +
+    const msg = `*Alpha Group Stock Movement History*\n` +
+      `Generated: ${new Date().toLocaleDateString()}\n\n` +
       (lines || 'No recent stock movements found.') +
       `\n\n_Audit Log from Alpha Group Enterprise Suite_`;
 

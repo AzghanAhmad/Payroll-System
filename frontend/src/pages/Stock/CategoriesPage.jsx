@@ -118,10 +118,16 @@ export default function CategoriesPage() {
     }
   };
 
-  const filtered = categories.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.description?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Separate Parent Categories and Other / Subcategories
+  const parentCategories = filtered.filter((c) => !c.parentCategory);
+  const subCategories = filtered.filter((c) => Boolean(c.parentCategory));
+
+  // Count subcategories for each parent
+  const getSubcategoryCount = (parentId) => {
+    return categories.filter((c) => (c.parentCategory?._id || c.parentCategory) === parentId).length;
+  };
+
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'parents' | 'subcategories'
 
   return (
     <StockLayout title="Category Management">
@@ -130,7 +136,7 @@ export default function CategoriesPage() {
         <div>
           <h2 className="text-xl font-bold text-slate-900">Product Categories</h2>
           <p className="text-slate-500 text-sm mt-0.5">
-            Organize inventory into main categories and subcategories.
+            Organize inventory into parent departments and detailed subcategories.
           </p>
         </div>
 
@@ -155,53 +161,200 @@ export default function CategoriesPage() {
         </div>
       </div>
 
-      {/* Categories Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((cat) => (
-          <div
-            key={cat._id}
-            className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-sky-300 transition-colors flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
-                  <FolderTree className="w-5 h-5" />
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => openModal(cat)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete category "${cat.name}"?`)) {
-                        deleteMutation.mutate(cat._id);
-                      }
-                    }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <h3 className="font-bold text-slate-900 text-base mt-3">{cat.name}</h3>
-              <p className="text-slate-500 text-xs mt-1 line-clamp-2">
-                {cat.description || 'No description provided.'}
-              </p>
-            </div>
-
-            {cat.parentCategory && (
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-1.5 text-xs text-slate-500">
-                <span className="text-[11px] text-slate-400">Parent:</span>
-                <span className="font-semibold text-slate-700">{cat.parentCategory.name}</span>
-              </div>
-            )}
-          </div>
-        ))}
+      {/* Filter / View Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-1">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={cn(
+            'px-4 py-2 text-xs font-semibold rounded-xl transition-colors',
+            activeTab === 'all'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          )}
+        >
+          All Categories ({categories.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('parents')}
+          className={cn(
+            'px-4 py-2 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5',
+            activeTab === 'parents'
+              ? 'bg-sky-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          )}
+        >
+          <span className="w-2 h-2 rounded-full bg-sky-400" />
+          Parent Categories ({parentCategories.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('subcategories')}
+          className={cn(
+            'px-4 py-2 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5',
+            activeTab === 'subcategories'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          )}
+        >
+          <span className="w-2 h-2 rounded-full bg-indigo-400" />
+          Subcategories ({subCategories.length})
+        </button>
       </div>
+
+      {/* SECTION 1: Parent Categories */}
+      {(activeTab === 'all' || activeTab === 'parents') && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-500" />
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Parent Categories ({parentCategories.length})
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500 font-medium">Top-level categories &amp; departments</span>
+          </div>
+
+          {parentCategories.length === 0 ? (
+            <div className="bg-white rounded-2xl p-8 border border-dashed border-slate-200 text-center text-slate-400 text-xs">
+              No parent categories found. Create a category without selecting a parent to establish one.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {parentCategories.map((cat) => {
+                const subCount = getSubcategoryCount(cat._id);
+                return (
+                  <div
+                    key={cat._id}
+                    className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-sky-400 transition-all flex flex-col justify-between group relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-sky-500" />
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">
+                          <FolderTree className="w-5 h-5" />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => openModal(cat)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete parent category "${cat.name}"? Subcategories linked to it will need reassignment.`)) {
+                                deleteMutation.mutate(cat._id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-baseline justify-between gap-2">
+                        <h4 className="font-bold text-slate-900 text-base">{cat.name}</h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 shrink-0">
+                          {subCount} {subCount === 1 ? 'Subcategory' : 'Subcategories'}
+                        </span>
+                      </div>
+                      <p className="text-slate-500 text-xs mt-1.5 line-clamp-2">
+                        {cat.description || 'No description provided.'}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="font-semibold text-sky-600">Top-level Department</span>
+                      <button
+                        onClick={() => {
+                          setForm({ name: '', description: '', parentCategory: cat._id });
+                          setEditingCategory(null);
+                          setModalOpen(true);
+                        }}
+                        className="text-slate-500 hover:text-sky-600 hover:underline font-medium"
+                      >
+                        + Add Subcategory
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* SECTION 2: Other / Subcategories */}
+      {(activeTab === 'all' || activeTab === 'subcategories') && (
+        <section className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-indigo-500" />
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Other / Subcategories ({subCategories.length})
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500 font-medium">Categories nested under parent departments</span>
+          </div>
+
+          {subCategories.length === 0 ? (
+            <div className="bg-white rounded-2xl p-8 border border-dashed border-slate-200 text-center text-slate-400 text-xs">
+              No subcategories found.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {subCategories.map((cat) => (
+                <div
+                  key={cat._id}
+                  className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-indigo-300 transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openModal(cat)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete subcategory "${cat.name}"?`)) {
+                              deleteMutation.mutate(cat._id);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <h4 className="font-bold text-slate-900 text-base mt-3">{cat.name}</h4>
+                    <p className="text-slate-500 text-xs mt-1 line-clamp-2">
+                      {cat.description || 'No description provided.'}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-[11px] text-slate-400">Parent Category:</span>
+                    <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md text-[11px] border border-indigo-100">
+                      {cat.parentCategory?.name || 'Assigned'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Add / Edit Modal */}
       {modalOpen && (
