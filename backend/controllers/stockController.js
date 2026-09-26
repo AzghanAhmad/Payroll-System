@@ -58,7 +58,11 @@ export const listProducts = asyncHandler(async (req, res) => {
   }
 
   let products = await Product.find(filter)
-    .populate('category', 'name parentCategory')
+    .populate({
+      path: 'category',
+      select: 'name parentCategory',
+      populate: { path: 'parentCategory', select: 'name' },
+    })
     .populate('vendor', 'name phone email contactPerson')
     .sort({ createdAt: -1 });
 
