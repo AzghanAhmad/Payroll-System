@@ -12,6 +12,7 @@ import {
 import StockLayout from '@/layouts/StockLayout';
 import { stockApi } from '@/services';
 import toast from 'react-hot-toast';
+import { cn } from '@/utils/helpers';
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
@@ -117,6 +118,11 @@ export default function CategoriesPage() {
       createMutation.mutate(payload);
     }
   };
+
+  const filtered = categories.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.description?.toLowerCase().includes(search.toLowerCase())
+  );
 
   // Separate Parent Categories and Other / Subcategories
   const parentCategories = filtered.filter((c) => !c.parentCategory);
