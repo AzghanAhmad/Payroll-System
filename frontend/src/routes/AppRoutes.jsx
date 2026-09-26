@@ -28,7 +28,8 @@ import ProductsPage from '@/pages/Stock/ProductsPage';
 import CategoriesPage from '@/pages/Stock/CategoriesPage';
 import StockBalanceSheetPage from '@/pages/Stock/StockBalanceSheetPage';
 import VendorsPage from '@/pages/Stock/VendorsPage';
-import EmployeeSalesPage from '@/pages/Stock/EmployeeSalesPage';
+import StockHistoryPage from '@/pages/Stock/StockHistoryPage';
+import UserStockDashboard from '@/pages/Stock/UserStockDashboard';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -92,7 +93,8 @@ export default function AppRoutes() {
         <Route path="/stock/categories" element={<CategoriesPage />} />
         <Route path="/stock/balance-sheet" element={<StockBalanceSheetPage />} />
         <Route path="/stock/vendors" element={<VendorsPage />} />
-        <Route path="/stock/employee-sales" element={<EmployeeSalesPage />} />
+        <Route path="/stock/history" element={<StockHistoryPage />} />
+        <Route path="/stock/user" element={<UserStockDashboard />} />
       </Route>
       <Route path="*" element={<Navigate to="/hub" replace />} />
     </Routes>

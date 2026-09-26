@@ -30,7 +30,27 @@ export default function CategoriesPage() {
     queryFn: stockApi.listCategories,
   });
 
+  const [isCreatingNewParent, setIsCreatingNewParent] = useState(false);
+  const [newParentName, setNewParentName] = useState('');
+
   const categories = data?.items || [];
+
+  const quickParentMutation = useMutation({
+    mutationFn: (name) => stockApi.createCategory({ name, parentCategory: null }),
+    onSuccess: (newCat) => {
+      queryClient.invalidateQueries({ queryKey: ['stock-categories'] });
+      toast.success(`Parent category "${newCat.name}" created`);
+      setForm((prev) => ({ ...prev, parentCategory: newCat._id }));
+      setIsCreatingNewParent(false);
+      setNewParentName('');
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Error creating parent category'),
+  });
+
+  const handleQuickCreateParent = () => {
+    if (!newParentName.trim()) return toast.error('Parent category name is required');
+    quickParentMutation.mutate(newParentName.trim());
+  };
 
   const createMutation = useMutation({
     mutationFn: stockApi.createCategory,
@@ -210,23 +230,80 @@ export default function CategoriesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Parent Category (Optional)
-                </label>
-                <select
-                  value={form.parentCategory}
-                  onChange={(e) => setForm({ ...form, parentCategory: e.target.value })}
-                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
-                >
-                  <option value="">None (Top-level category)</option>
-                  {categories
-                    .filter((c) => !editingCategory || c._id !== editingCategory._id)
-                    .map((c) => (
-                      <option key={c._id} value={c._id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Parent Category (Optional)
+                  </label>
+                  {!isCreatingNewParent ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingNewParent(true)}
+                      className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                    >
+                      Add New Parent Category
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingNewParent(false);
+                        setNewParentName('');
+                      }}
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+
+                {isCreatingNewParent ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Type new parent category name..."
+                      value={newParentName}
+                      onChange={(e) => setNewParentName(e.target.value)}
+                      className="flex-1 text-xs px-3.5 py-2.5 rounded-xl border border-sky-300 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-sky-50/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleQuickCreateParent}
+                      disabled={!newParentName.trim() || quickParentMutation.isPending}
+                      className="px-3 py-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold text-xs rounded-xl disabled:bg-slate-200 transition-colors"
+                    >
+                      {quickParentMutation.isPending ? '...' : 'Add'}
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={form.parentCategory}
+                    onChange={(e) => {
+                      if (e.target.value === '__add_new__') {
+                        setIsCreatingNewParent(true);
+                      } else {
+                        setForm({ ...form, parentCategory: e.target.value });
+                      }
+                    }}
+                    className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
+                  >
+                    <option value="">None (Top-level parent category)</option>
+                    <option value="__add_new__" className="font-semibold text-sky-600">
+                      Create New Parent Category...
+                    </option>
+                    <optgroup label="Existing Categories">
+                      {categories
+                        .filter((c) => !editingCategory || c._id !== editingCategory._id)
+                        .map((c) => (
+                          <option key={c._id} value={c._id}>
+                            {c.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  </select>
+                )}
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Assign to nest under a main department or raw material group.
+                </p>
               </div>
 
               <div>

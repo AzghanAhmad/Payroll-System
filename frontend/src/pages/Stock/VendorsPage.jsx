@@ -294,7 +294,7 @@ export default function VendorsPage() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Phone / WhatsApp</label>
                   <input
                     type="text"
-                    placeholder="e.g. +923001234567"
+                    placeholder="e.g. 1234567890"
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                     className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
@@ -360,6 +360,7 @@ export default function VendorsPage() {
         onClose={() => setWaModalOpen(false)}
         defaultTitle={`Contact ${waTargetVendor?.name || 'Vendor'}`}
         text={waTargetText}
+        initialPhone={waTargetVendor?.phone || ''}
       />
     </StockLayout>
   );

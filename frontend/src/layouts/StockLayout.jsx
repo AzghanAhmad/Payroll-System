@@ -12,6 +12,7 @@ import {
   X,
   ArrowLeftRight,
   Share2,
+  History,
   Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -24,7 +25,7 @@ const stockNavLinks = [
   { to: '/stock/categories', label: 'Categories', icon: Layers },
   { to: '/stock/balance-sheet', label: 'Inventory Sheet', icon: TableProperties },
   { to: '/stock/vendors', label: 'Vendors / Suppliers', icon: Truck },
-  { to: '/stock/employee-sales', label: 'Employee Sales', icon: Trophy },
+  { to: '/stock/history', label: 'Stock History', icon: History },
 ];
 
 export default function StockLayout({ children, title }) {
@@ -57,48 +58,59 @@ export default function StockLayout({ children, title }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 flex flex-col justify-between transition-transform duration-200 md:translate-x-0 md:static',
+          'fixed inset-y-0 left-0 z-40 w-64 flex flex-col justify-between transition-transform duration-200 md:translate-x-0 md:static bg-sidebar text-white',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div>
           {/* Brand header */}
-          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
-                <Boxes className="w-5 h-5" />
+          <div className="shrink-0 p-5 border-b border-white/10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/Payroll-Icon.png"
+                  alt="Alpha Group"
+                  className="h-10 w-auto max-w-[150px] object-contain"
+                />
               </div>
-              <div>
-                <h2 className="font-bold text-base text-slate-900 leading-tight">Stock Suite</h2>
-                <span className="text-xs text-sky-600 font-medium">Alpha Group</span>
-              </div>
+              <button
+                onClick={() => setOpen(false)}
+                className="md:hidden p-1 rounded-md text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="md:hidden p-1 rounded-md text-slate-400 hover:text-slate-600"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center justify-between mt-2.5">
+              <span className="text-xs font-semibold text-sky-400 flex items-center gap-1.5">
+                <Boxes className="w-3.5 h-3.5" /> Stock &amp; Inventory Suite
+              </span>
+              <Link
+                to="/hub"
+                className="text-[10px] font-semibold text-slate-400 hover:text-white bg-white/10 px-2 py-0.5 rounded-md transition-colors"
+              >
+                Hub &rarr;
+              </Link>
+            </div>
           </div>
 
           {/* Module Switcher button */}
-          <div className="p-4">
+          <div className="px-3 pt-3">
             <button
               onClick={() => navigate('/hub')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-200/80 transition-colors text-xs font-semibold group"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors text-xs font-medium group"
             >
               <span className="flex items-center gap-2">
-                <ArrowLeftRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-sky-600" />
+                <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-400" />
                 Switch Workspace
               </span>
-              <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-[10px] text-slate-500">
+              <span className="bg-white/10 px-2 py-0.5 rounded-md text-[10px] text-slate-300">
                 Hub
               </span>
             </button>
           </div>
 
           {/* Nav Links */}
-          <nav className="px-3 space-y-1">
+          <nav className="p-3 space-y-1">
             {stockNavLinks.map((item) => {
               const Icon = item.icon;
               return (
@@ -109,10 +121,10 @@ export default function StockLayout({ children, title }) {
                   onClick={() => setOpen(false)}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      'flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-sm font-medium transition',
                       isActive
-                        ? 'bg-sky-50 text-sky-600 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                        ? 'bg-primary text-white shadow-lg shadow-blue-900/40'
+                        : 'text-slate-300 hover:bg-sidebar-hover hover:text-white'
                     )
                   }
                 >
@@ -125,19 +137,22 @@ export default function StockLayout({ children, title }) {
         </div>
 
         {/* User & Payroll Shortcut */}
-        <div className="p-4 border-t border-slate-100 space-y-3">
+        <div className="p-4 border-t border-white/10 space-y-3">
           {/* Quick link to Payroll */}
           <button
             onClick={() => navigate('/payroll-dashboard')}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-blue-50/70 hover:bg-blue-100/70 text-blue-700 text-xs font-medium border border-blue-100 transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white text-xs font-medium border border-white/10 transition-colors"
           >
-            <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-            <span>Go to Payroll System &rarr;</span>
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Payroll System
+            </span>
+            <span className="text-[10px] text-sky-400">&rarr;</span>
           </button>
 
           <div className="flex items-center justify-between pt-1">
             <div className="flex flex-col">
-              <span className="text-xs font-semibold text-slate-800 truncate max-w-[130px]">
+              <span className="text-xs font-semibold text-slate-200 truncate max-w-[130px]">
                 {user?.name || user?.email}
               </span>
               <span className="text-[10px] text-slate-400 capitalize">{user?.role || 'Admin'}</span>
@@ -145,7 +160,7 @@ export default function StockLayout({ children, title }) {
             <button
               onClick={logout}
               title="Sign out"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-white/5 transition-colors"
             >
               <LogOut className="w-4 h-4" />
             </button>

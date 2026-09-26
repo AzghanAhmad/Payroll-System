@@ -85,18 +85,17 @@ export const createProduct = asyncHandler(async (req, res) => {
     vendor,
     unit,
     startBalance = 0,
-    currentQuantity,
+    currentQuantity = 0,
     minQuantity = 5,
     maxQuantity = 100,
     costPrice = 0,
-    sellingPrice = 0,
     description = '',
   } = req.body;
 
   if (!name?.trim()) throw new AppError('Product name is required', 400);
   if (!category) throw new AppError('Category is required', 400);
 
-  const initialQty = currentQuantity !== undefined ? Number(currentQuantity) : Number(startBalance);
+  const initialQty = Number(currentQuantity) || 0;
   const startBal = Number(startBalance) || initialQty;
   const endBal = initialQty;
 
@@ -112,7 +111,7 @@ export const createProduct = asyncHandler(async (req, res) => {
     minQuantity: Number(minQuantity) || 5,
     maxQuantity: Number(maxQuantity) || 100,
     costPrice: Number(costPrice) || 0,
-    sellingPrice: Number(sellingPrice) || 0,
+    sellingPrice: 0,
     description: description?.trim() || '',
   });
 
@@ -218,9 +217,9 @@ export const batchUpdateBalanceSheet = asyncHandler(async (req, res) => {
     if (!prod) continue;
 
     const oldQty = prod.currentQuantity;
-    prod.startBalance = isNaN(startBal) ? prod.startBalance : startBal;
-    prod.currentQuantity = isNaN(currQty) ? prod.currentQuantity : currQty;
-    prod.endBalance = isNaN(endBal) ? prod.currentQuantity : endBal;
+    if (!isNaN(startBal)) prod.startBalance = startBal;
+    if (!isNaN(currQty)) prod.currentQuantity = currQty;
+    if (!isNaN(endBal)) prod.endBalance = endBal;
 
     if (row.minQuantity !== undefined && !isNaN(Number(row.minQuantity))) {
       prod.minQuantity = Number(row.minQuantity);
@@ -229,6 +228,9 @@ export const batchUpdateBalanceSheet = asyncHandler(async (req, res) => {
       prod.maxQuantity = Number(row.maxQuantity);
     }
 
+    prod.markModified('currentQuantity');
+    prod.markModified('startBalance');
+    prod.markModified('endBalance');
     await prod.save();
 
     // Record movement if quantity changed
@@ -247,19 +249,31 @@ export const batchUpdateBalanceSheet = asyncHandler(async (req, res) => {
     updatedProducts.push(prod);
   }
 
-  res.json({ message: 'Balance sheet updated', updatedCount: updatedProducts.length });
+  res.json({ message: 'Balance sheet updated successfully', updatedCount: updatedProducts.length });
 });
 
 export const getStockMovements = asyncHandler(async (req, res) => {
-  const { productId, limit = 50 } = req.query;
+  const { productId, type, search, limit = 200 } = req.query;
   const filter = {};
   if (productId) filter.product = productId;
+  if (type) filter.type = type;
 
-  const movements = await StockMovement.find(filter)
-    .populate('product', 'name sku unit')
-    .populate('recordedBy', 'name')
+  let movements = await StockMovement.find(filter)
+    .populate('product', 'name sku unit category')
+    .populate('recordedBy', 'name email')
     .sort({ createdAt: -1 })
     .limit(Number(limit));
+
+  if (search) {
+    const q = search.toLowerCase();
+    movements = movements.filter(
+      (m) =>
+        m.product?.name?.toLowerCase().includes(q) ||
+        m.product?.sku?.toLowerCase().includes(q) ||
+        m.reason?.toLowerCase().includes(q) ||
+        m.reference?.toLowerCase().includes(q)
+    );
+  }
 
   res.json({ items: movements });
 });
@@ -386,7 +400,9 @@ export const importStockExcel = asyncHandler(async (req, res) => {
 export const getStockDashboardStats = asyncHandler(async (req, res) => {
   const totalProducts = await Product.countDocuments({ status: 'active' });
   const totalCategories = await Category.countDocuments();
-  const allProducts = await Product.find({ status: 'active' }).populate('category', 'name');
+  const allProducts = await Product.find({ status: 'active' })
+    .populate('category', 'name')
+    .populate('vendor', 'name phone email contactPerson');
 
   let lowStockCount = 0;
   let outOfStockCount = 0;

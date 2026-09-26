@@ -26,25 +26,27 @@ export default function ModuleSelectPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between selection:bg-blue-100 selection:text-blue-900">
       {/* Top Navbar */}
-      <header className="w-full px-6 py-4 flex items-center justify-between border-b border-slate-200/80 bg-white/70 backdrop-blur-md sticky top-0 z-10">
+      <header className="w-full px-6 py-3.5 flex items-center justify-between border-b border-white/10 bg-sidebar text-white sticky top-0 z-10 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900 leading-tight">Alpha Group</h1>
-            <p className="text-xs text-slate-500 font-medium">Enterprise Management Suite</p>
+          <img
+            src="/Payroll-Icon.png"
+            alt="Alpha Group"
+            className="h-9 w-auto max-w-[150px] object-contain"
+          />
+          <div className="border-l border-white/10 pl-3">
+            <h1 className="text-sm font-bold text-white leading-tight">Enterprise Suite</h1>
+            <p className="text-[11px] text-slate-400 font-medium">Workspace Selector</p>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
           <div className="hidden sm:flex flex-col text-right">
-            <span className="text-sm font-semibold text-slate-800">{user?.name || user?.email || 'Administrator'}</span>
-            <span className="text-xs text-slate-500 capitalize">{user?.role || 'User'}</span>
+            <span className="text-xs font-semibold text-slate-200">{user?.name || user?.email || 'Administrator'}</span>
+            <span className="text-[10px] text-slate-400 capitalize">{user?.role || 'User'}</span>
           </div>
           <button
             onClick={logout}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/10 border border-white/10 transition-colors"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Sign out</span>
@@ -118,14 +120,25 @@ export default function ModuleSelectPage() {
                 </div>
               </div>
 
-              {/* Action Button */}
-              <div className="mt-8 pt-5 border-t border-slate-100">
+              {/* Action Buttons */}
+              <div className="mt-8 pt-5 border-t border-slate-100 space-y-2.5">
                 <button
                   type="button"
                   className="w-full py-3 px-5 rounded-2xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white font-semibold text-sm shadow-md shadow-sky-500/25 flex items-center justify-center gap-2 group-hover:gap-3 transition-all duration-200"
                 >
-                  <span>Launch Stock Management</span>
+                  <span>Launch Full Stock Suite</span>
                   <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectModule('/stock/user');
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-xs flex items-center justify-center gap-1.5 border border-sky-200/80 transition-colors"
+                >
+                  <span>Open Quick User Portal (Manage Add &amp; Sales)</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

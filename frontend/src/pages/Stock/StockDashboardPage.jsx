@@ -21,6 +21,7 @@ import WhatsAppShareModal from '@/components/stock/WhatsAppShareModal';
 export default function StockDashboardPage() {
   const [waModalOpen, setWaModalOpen] = useState(false);
   const [waText, setWaText] = useState('');
+  const [waPhone, setWaPhone] = useState('');
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['stock-dashboard-stats'],
@@ -46,6 +47,26 @@ export default function StockDashboardPage() {
       (stats?.lowStockCount > 0 ? `*Items needing restock:*\n${lowStockItemsText}\n\n` : '') +
       `_Generated via Alpha Group Enterprise Suite_`;
 
+    setWaPhone('');
+    setWaText(message);
+    setWaModalOpen(true);
+  };
+
+  const handleShareLowStockAlert = (item) => {
+    const vendorName = item.vendor?.name || 'Supplier';
+    const vendorPhone = item.vendor?.phone || '';
+    const message = `*URGENT: Low Stock Reorder Alert*\n\n` +
+      `Hello ${vendorName},\n` +
+      `We need to place a restock order for:\n` +
+      `📦 Product: *${item.name}*\n` +
+      (item.sku ? `🏷️ SKU: ${item.sku}\n` : '') +
+      `⚖️ Current Remaining Stock: *${item.currentQuantity} ${item.unit}*\n` +
+      `⚠️ Threshold Level: ${item.minQuantity} ${item.unit}\n` +
+      `📈 Max Capacity: ${item.maxQuantity} ${item.unit}\n\n` +
+      `Please let us know your earliest delivery date and unit price quotation.\n\n` +
+      `Thank you,\nAlpha Group Management`;
+
+    setWaPhone(vendorPhone);
     setWaText(message);
     setWaModalOpen(true);
   };
@@ -171,7 +192,8 @@ export default function StockDashboardPage() {
                     <th className="pb-3">Category</th>
                     <th className="pb-3 text-right">Balance</th>
                     <th className="pb-3 text-right">Min Qty</th>
-                    <th className="pb-3 text-right">Status</th>
+                    <th className="pb-3 text-center">Status</th>
+                    <th className="pb-3 text-right">Notify Vendor</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -190,10 +212,20 @@ export default function StockDashboardPage() {
                       <td className="py-3 text-right text-slate-500 text-xs">
                         {item.minQuantity} {item.unit}
                       </td>
-                      <td className="py-3 text-right">
+                      <td className="py-3 text-center">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">
                           Low Stock
                         </span>
+                      </td>
+                      <td className="py-3 text-right">
+                        <button
+                          onClick={() => handleShareLowStockAlert(item)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors"
+                          title="Send Low Stock Alert via WhatsApp"
+                        >
+                          <Share2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>WhatsApp</span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -233,12 +265,12 @@ export default function StockDashboardPage() {
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
               </Link>
               <Link
-                to="/stock/employee-sales"
+                to="/stock/history"
                 className="flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition-colors"
               >
                 <div className="flex items-center gap-2.5">
-                  <Trophy className="w-4 h-4 text-purple-500" />
-                  <span>Employee Sales Leaderboard</span>
+                  <Trophy className="w-4 h-4 text-sky-500" />
+                  <span>Stock Movement History</span>
                 </div>
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
               </Link>
@@ -250,8 +282,9 @@ export default function StockDashboardPage() {
       <WhatsAppShareModal
         isOpen={waModalOpen}
         onClose={() => setWaModalOpen(false)}
-        defaultTitle="Share Stock Overview"
+        defaultTitle="WhatsApp Alert"
         text={waText}
+        initialPhone={waPhone}
       />
     </StockLayout>
   );

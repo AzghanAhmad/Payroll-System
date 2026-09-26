@@ -61,7 +61,6 @@ export default function ProductsPage() {
     minQuantity: 5,
     maxQuantity: 100,
     costPrice: 0,
-    sellingPrice: 0,
     description: '',
   });
 
@@ -143,7 +142,6 @@ export default function ProductsPage() {
         minQuantity: prod.minQuantity ?? 5,
         maxQuantity: prod.maxQuantity ?? 100,
         costPrice: prod.costPrice ?? 0,
-        sellingPrice: prod.sellingPrice ?? 0,
         description: prod.description || '',
       });
     } else {
@@ -159,7 +157,6 @@ export default function ProductsPage() {
         minQuantity: 5,
         maxQuantity: 100,
         costPrice: 0,
-        sellingPrice: 0,
         description: '',
       });
     }
@@ -185,7 +182,6 @@ export default function ProductsPage() {
       minQuantity: Number(form.minQuantity) || 5,
       maxQuantity: Number(form.maxQuantity) || 100,
       costPrice: Number(form.costPrice) || 0,
-      sellingPrice: Number(form.sellingPrice) || 0,
     };
 
     if (editingProduct) {
@@ -228,7 +224,7 @@ export default function ProductsPage() {
       `📂 Category: ${prod.category?.name || 'General'}\n` +
       `⚖️ Current Balance: *${prod.currentQuantity} ${prod.unit}*\n` +
       `⚠️ Low Stock Threshold: ${prod.minQuantity} ${prod.unit}\n` +
-      `💵 Selling Price: ${formatMoney(prod.sellingPrice)}\n` +
+      `💵 Cost Price: ${formatMoney(prod.costPrice)}\n` +
       `📊 Status: ${prod.currentQuantity <= prod.minQuantity ? 'LOW STOCK ⚠️' : 'IN STOCK ✅'}`;
     setWaText(msg);
     setWaModalOpen(true);
@@ -360,7 +356,7 @@ export default function ProductsPage() {
                 <th className="px-4 py-3.5 text-right">Start Bal</th>
                 <th className="px-4 py-3.5 text-right">Current Qty</th>
                 <th className="px-4 py-3.5 text-right">Min / Max</th>
-                <th className="px-4 py-3.5 text-right">Selling Price</th>
+                <th className="px-4 py-3.5 text-right">Cost Price</th>
                 <th className="px-4 py-3.5 text-center">Status</th>
                 <th className="px-5 py-3.5 text-right">Actions</th>
               </tr>
@@ -415,7 +411,7 @@ export default function ProductsPage() {
                         {p.minQuantity} / {p.maxQuantity}
                       </td>
                       <td className="px-4 py-3.5 text-right font-medium text-slate-800 text-xs">
-                        {formatMoney(p.sellingPrice)}
+                        {formatMoney(p.costPrice)}
                       </td>
                       <td className="px-4 py-3.5 text-center">
                         {isOut ? (
@@ -614,24 +610,13 @@ export default function ProductsPage() {
                   />
                 </div>
 
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Cost Price ($)</label>
                   <input
                     type="number"
                     step="any"
                     value={form.costPrice}
                     onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
-                    className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Selling Price ($)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={form.sellingPrice}
-                    onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
                     className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
                   />
                 </div>

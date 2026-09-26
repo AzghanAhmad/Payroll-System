@@ -1,21 +1,36 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageCircle, Copy, Check, ExternalLink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-export default function WhatsAppShareModal({ isOpen, onClose, defaultTitle = 'Stock Update', text = '' }) {
-  const [phoneNumber, setPhoneNumber] = useState('');
+export default function WhatsAppShareModal({
+  isOpen,
+  onClose,
+  defaultTitle = 'Stock Update',
+  text = '',
+  initialPhone = '',
+}) {
+  const [phoneNumber, setPhoneNumber] = useState(initialPhone || '');
+  const [messageText, setMessageText] = useState(text || '');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setMessageText(text || '');
+  }, [text]);
+
+  useEffect(() => {
+    if (initialPhone) setPhoneNumber(initialPhone);
+  }, [initialPhone]);
 
   if (!isOpen) return null;
 
   const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-  const encodedText = encodeURIComponent(text);
+  const encodedText = encodeURIComponent(messageText);
   const waUrl = cleanPhone
     ? `https://wa.me/${cleanPhone}?text=${encodedText}`
     : `https://wa.me/?text=${encodedText}`;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(messageText);
     setCopied(true);
     toast.success('Message copied to clipboard');
     setTimeout(() => setCopied(false), 2000);
@@ -49,7 +64,7 @@ export default function WhatsAppShareModal({ isOpen, onClose, defaultTitle = 'St
             </label>
             <input
               type="text"
-              placeholder="e.g. +923001234567 or 1234567890 (leave empty to select chat)"
+              placeholder="e.g. 1234567890 (type country code + number, or leave empty)"
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
               className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
@@ -57,12 +72,18 @@ export default function WhatsAppShareModal({ isOpen, onClose, defaultTitle = 'St
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Message Preview
-            </label>
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-700 whitespace-pre-wrap max-h-48 overflow-y-auto font-mono">
-              {text}
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700">
+                Message (Editable Preview)
+              </label>
+              <span className="text-[10px] text-slate-400">You can edit this before sending</span>
             </div>
+            <textarea
+              rows={6}
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              className="w-full text-xs p-3.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-slate-50 font-mono text-slate-800 resize-y"
+            />
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
