@@ -177,8 +177,6 @@ export default function UsersSettings() {
                 className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white"
               >
                 <option value="employee">Employee (Quick User Portal Only)</option>
-                <option value="manager">Manager (Stock &amp; Operations)</option>
-                <option value="hr">HR (Payroll &amp; Leave)</option>
                 <option value="admin">Administrator (Full Access)</option>
               </select>
 
@@ -240,7 +238,7 @@ export default function UsersSettings() {
                       <td className="px-4 py-3.5">
                         {isSelf ? (
                           <span className="capitalize font-semibold text-slate-700 px-2 py-1 rounded-md bg-slate-100">
-                            {u.role}
+                            {u.role === 'admin' ? 'Administrator' : 'Employee'}
                           </span>
                         ) : (
                           <select
@@ -249,9 +247,7 @@ export default function UsersSettings() {
                             className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 bg-white font-medium capitalize"
                           >
                             <option value="employee">Employee (Portal Only)</option>
-                            <option value="manager">Manager</option>
-                            <option value="hr">HR</option>
-                            <option value="admin">Admin</option>
+                            <option value="admin">Administrator</option>
                           </select>
                         )}
                       </td>
