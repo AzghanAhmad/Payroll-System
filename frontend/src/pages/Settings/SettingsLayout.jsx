@@ -6,6 +6,7 @@ import {
   Landmark,
   Layers,
   KeyRound,
+  Users as UsersIcon,
 } from 'lucide-react';
 import AppLayout from '@/layouts/AppLayout';
 import { cn } from '@/utils/helpers';
@@ -13,6 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 
 const SECTIONS = [
   { to: '/settings/account', label: 'Account', icon: KeyRound, desc: 'Email & password', allRoles: true },
+  { to: '/settings/users', label: 'Users & Roles', icon: UsersIcon, desc: 'Add users & assign roles' },
   { to: '/settings/company', label: 'Company', icon: Building2, desc: 'Name, logo, currency' },
   { to: '/settings/payroll', label: 'Payroll Rules', icon: Calculator, desc: 'OT, NPF & ACC rates' },
   { to: '/settings/leave', label: 'Leave Entitlements', icon: Palmtree, desc: 'Annual leave allowances' },

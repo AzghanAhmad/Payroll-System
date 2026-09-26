@@ -166,3 +166,72 @@ export const changePassword = asyncHandler(async (req, res) => {
 
   res.json({ message: 'Password updated successfully' });
 });
+
+// ================= ADMIN USER MANAGEMENT =================
+export const listUsers = asyncHandler(async (req, res) => {
+  const users = await User.find().select('-password -refreshToken').sort({ createdAt: -1 });
+  res.json({ items: users });
+});
+
+export const createUser = asyncHandler(async (req, res) => {
+  const { name, email, password, role = 'employee' } = req.body;
+  if (!name?.trim() || !email?.trim() || !password) {
+    throw new AppError('Name, email, and password are required', 400);
+  }
+
+  const existing = await User.findOne({ email: email.trim().toLowerCase() });
+  if (existing) {
+    throw new AppError('An account with this email already exists', 400);
+  }
+
+  const newUser = await User.create({
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    password,
+    role,
+    isActive: true,
+  });
+
+  res.status(201).json({
+    user: {
+      id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+      role: newUser.role,
+      isActive: newUser.isActive,
+    },
+  });
+});
+
+export const updateUser = asyncHandler(async (req, res) => {
+  const { name, role, isActive, password } = req.body;
+  const user = await User.findById(req.params.id);
+  if (!user) throw new AppError('User not found', 404);
+
+  if (name) user.name = name.trim();
+  if (role) user.role = role;
+  if (typeof isActive === 'boolean') user.isActive = isActive;
+  if (password && password.trim()) {
+    user.password = password;
+  }
+
+  await user.save();
+  res.json({
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+    },
+  });
+});
+
+export const deleteUser = asyncHandler(async (req, res) => {
+  if (String(req.user._id) === String(req.params.id)) {
+    throw new AppError('You cannot delete your own account', 400);
+  }
+  const user = await User.findByIdAndDelete(req.params.id);
+  if (!user) throw new AppError('User not found', 404);
+  res.json({ message: 'User deleted successfully' });
+});

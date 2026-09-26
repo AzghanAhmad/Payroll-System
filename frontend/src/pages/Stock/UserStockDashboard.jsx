@@ -162,13 +162,21 @@ export default function UserStockDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/hub')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/15 text-slate-200 hover:text-white transition-colors border border-white/10"
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5" />
-            <span>Workspace Hub</span>
-          </button>
+          <div className="hidden sm:flex flex-col text-right">
+            <span className="text-xs font-semibold text-slate-200">{user?.name || user?.email}</span>
+            <span className="text-[10px] text-slate-400 capitalize">{user?.role === 'employee' ? 'Staff Operations' : user?.role || 'Staff'}</span>
+          </div>
+
+          {user?.role !== 'employee' && (
+            <button
+              onClick={() => navigate('/hub')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/15 text-slate-200 hover:text-white transition-colors border border-white/10"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              <span>Workspace Hub</span>
+            </button>
+          )}
+
           <button
             onClick={logout}
             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-white/10 transition-colors"

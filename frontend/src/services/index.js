@@ -8,6 +8,11 @@ export const authApi = {
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }).then((r) => r.data),
   resetPassword: (data) => api.post('/auth/reset-password', data).then((r) => r.data),
   changePassword: (data) => api.put('/auth/change-password', data).then((r) => r.data),
+  // Admin user management
+  listUsers: () => api.get('/auth/users').then((r) => r.data),
+  createUser: (data) => api.post('/auth/users', data).then((r) => r.data),
+  updateUser: (id, data) => api.put(`/auth/users/${id}`, data).then((r) => r.data),
+  deleteUser: (id) => api.delete(`/auth/users/${id}`).then((r) => r.data),
 };
 
 export const employeeApi = {

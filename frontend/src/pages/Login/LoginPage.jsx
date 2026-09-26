@@ -18,9 +18,13 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(email.trim(), password);
+      const loggedUser = await login(email.trim(), password);
       toast.success('Welcome back');
-      navigate('/hub');
+      if (loggedUser?.role === 'employee') {
+        navigate('/stock/user');
+      } else {
+        navigate('/hub');
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Sign in failed');
     } finally {
