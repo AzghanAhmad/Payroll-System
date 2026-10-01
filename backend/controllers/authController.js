@@ -23,7 +23,30 @@ const authResponse = async (user) => {
 };
 
 export const register = asyncHandler(async (req, res) => {
-  throw new AppError('Public sign-up is disabled. Ask an admin to create your account.', 403);
+  const { name, email, password } = req.body;
+  if (!name?.trim() || !email?.trim() || !password) {
+    throw new AppError('Name, email, and password are required', 400);
+  }
+  if (String(password).length < 6) {
+    throw new AppError('Password must be at least 6 characters', 400);
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = await User.findOne({ email: normalizedEmail });
+  if (existing) {
+    throw new AppError('An account with this email already exists', 400);
+  }
+
+  const user = await User.create({
+    name: name.trim(),
+    email: normalizedEmail,
+    password,
+    role: 'employee',
+    isActive: true,
+  });
+
+  const data = await authResponse(user);
+  res.status(201).json(data);
 });
 
 export const login = asyncHandler(async (req, res) => {

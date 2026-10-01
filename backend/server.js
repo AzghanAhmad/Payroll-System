@@ -48,8 +48,16 @@ const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow same-origin / non-browser / configured client
-      if (!origin || origin === clientUrl || serveSpa) return cb(null, true);
+      // Allow same-origin / non-browser / configured client / localhost dev ports
+      if (
+        !origin ||
+        origin === clientUrl ||
+        serveSpa ||
+        /^http:\/\/localhost:\d+$/.test(origin) ||
+        /^http:\/\/127\.0\.0\.1:\d+$/.test(origin)
+      ) {
+        return cb(null, true);
+      }
       return cb(null, origin === clientUrl);
     },
     credentials: true,

@@ -121,24 +121,13 @@ export default function ModuleSelectPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="mt-8 pt-5 border-t border-slate-100 space-y-2.5">
+              <div className="mt-8 pt-5 border-t border-slate-100">
                 <button
                   type="button"
                   className="w-full py-3 px-5 rounded-2xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white font-semibold text-sm shadow-md shadow-sky-500/25 flex items-center justify-center gap-2 group-hover:gap-3 transition-all duration-200"
                 >
-                  <span>Launch Full Stock Suite</span>
+                  <span>Launch Stock Management</span>
                   <ArrowRight className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSelectModule('/stock/user');
-                  }}
-                  className="w-full py-2 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-xs flex items-center justify-center gap-1.5 border border-sky-200/80 transition-colors"
-                >
-                  <span>Open Quick User Portal (Manage Add &amp; Sales)</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

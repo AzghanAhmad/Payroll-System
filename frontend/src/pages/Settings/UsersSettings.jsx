@@ -99,34 +99,11 @@ export default function UsersSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Quick User Portal Promotion Banner */}
-      <div className="bg-gradient-to-r from-sky-50 via-white to-blue-50 border border-sky-200/80 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700 mb-1.5">
-            <ShieldCheck className="w-3.5 h-3.5" /> Quick Operations Portal
-          </div>
-          <h3 className="font-bold text-slate-900 text-sm sm:text-base">
-            Quick User Portal (Manage Add &amp; Sales)
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Regular staff users (role: Employee) can only access this focused operations dashboard to record stock inward and store sales.
-          </p>
-        </div>
-
-        <Link
-          to="/stock/user"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-xs transition-colors shrink-0"
-        >
-          <span>Open Quick User Portal</span>
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-      </div>
-
       {/* Header and User Creation Form */}
       <div>
         <h2 className="font-heading text-lg font-bold text-slate-900">User Management</h2>
         <p className="text-sm text-muted">
-          Add login accounts and assign access roles. Staff users with the "Employee" role only see the quick stock &amp; sales portal.
+          Add login accounts and assign access roles. Staff users with the "Employee" role can log in to their dedicated operations portal.
         </p>
       </div>
 
