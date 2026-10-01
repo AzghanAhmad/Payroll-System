@@ -145,12 +145,14 @@ export default function UserDashboardPage() {
       {/* Top Navbar matching Alpha Group theme */}
       <header className="px-6 py-3.5 bg-sidebar border-b border-white/10 sticky top-0 z-20 flex items-center justify-between shadow-md text-white">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
-            <Boxes className="w-5 h-5" />
-          </div>
-          <div>
+          <img
+            src="/Payroll-Icon.png"
+            alt="Alpha Group"
+            className="h-10 w-auto max-w-[150px] object-contain"
+          />
+          <div className="border-l border-white/10 pl-3">
             <h1 className="text-sm font-bold text-white leading-tight flex items-center gap-1.5">
-              Alpha Group Operations Portal
+              Operations Portal
             </h1>
             <p className="text-[11px] text-sky-400 font-medium">Stock Inward &amp; Store Sales Management</p>
           </div>

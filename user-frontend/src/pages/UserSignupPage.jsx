@@ -49,10 +49,12 @@ export default function UserSignupPage() {
       {/* Top Header */}
       <header className="px-6 py-4 flex items-center justify-between border-b border-white/10 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/30">
-            <Boxes className="w-5 h-5" />
-          </div>
-          <div>
+          <img
+            src="/Payroll-Icon.png"
+            alt="Alpha Group"
+            className="h-10 w-auto max-w-[150px] object-contain"
+          />
+          <div className="border-l border-white/10 pl-3">
             <h1 className="text-sm font-bold text-white tracking-tight">Alpha Group</h1>
             <p className="text-[11px] text-sky-400 font-medium">Staff Operations Portal</p>
           </div>
