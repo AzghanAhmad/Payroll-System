@@ -33,7 +33,9 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const clientDist = path.join(__dirname, '..', 'frontend', 'dist');
+const userClientDist = path.join(__dirname, '..', 'user-frontend', 'dist');
 const serveSpa = fs.existsSync(path.join(clientDist, 'index.html'));
+const serveUserSpa = fs.existsSync(path.join(userClientDist, 'index.html'));
 
 await connectDB();
 
@@ -127,6 +129,26 @@ app.use('/api/stock', stockRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/stock-sales', stockSalesRoutes);
 
+if (serveUserSpa) {
+  app.use(
+    '/user',
+    express.static(userClientDist, {
+      index: false,
+      maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
+    })
+  );
+  app.get('/user/*', (req, res, next) => {
+    res.sendFile(path.join(userClientDist, 'index.html'), (err) => {
+      if (err) next(err);
+    });
+  });
+  app.get('/user', (req, res, next) => {
+    res.sendFile(path.join(userClientDist, 'index.html'), (err) => {
+      if (err) next(err);
+    });
+  });
+}
+
 if (serveSpa) {
   app.use(
     express.static(clientDist, {
@@ -135,7 +157,7 @@ if (serveSpa) {
     })
   );
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/user')) return next();
     res.sendFile(path.join(clientDist, 'index.html'), (err) => {
       if (err) next(err);
     });
