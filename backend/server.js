@@ -47,20 +47,25 @@ app.use(helmet({
 }));
 
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+const allowedOrigins = clientUrl
+  .split(',')
+  .map((s) => s.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow same-origin / non-browser / configured client / localhost dev ports
+      // Allow same-origin / non-browser / configured client(s) / localhost dev ports
       if (
         !origin ||
-        origin === clientUrl ||
+        allowedOrigins.includes(origin) ||
         serveSpa ||
         /^http:\/\/localhost:\d+$/.test(origin) ||
         /^http:\/\/127\.0\.0\.1:\d+$/.test(origin)
       ) {
         return cb(null, true);
       }
-      return cb(null, origin === clientUrl);
+      return cb(null, allowedOrigins.includes(origin));
     },
     credentials: true,
     exposedHeaders: ['Content-Disposition'],
