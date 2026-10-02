@@ -7,14 +7,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "vite --port 5174",
     "dev": "vite --port 5174",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}",
+    "start": "vite preview --host 0.0.0.0 --port ${PORT:-4173}"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
-    "alpha-group-payroll": "file:..",
     "axios": "^1.19.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
