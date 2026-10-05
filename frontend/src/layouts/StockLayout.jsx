@@ -14,6 +14,7 @@ import {
   Share2,
   History,
   Sparkles,
+  Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
@@ -26,6 +27,7 @@ const stockNavLinks = [
   { to: '/stock/balance-sheet', label: 'Inventory Sheet', icon: TableProperties },
   { to: '/stock/vendors', label: 'Vendors / Suppliers', icon: Truck },
   { to: '/stock/history', label: 'Stock History', icon: History },
+  { to: '/stock/settings', label: 'Stock Settings', icon: Settings },
 ];
 
 export default function StockLayout({ children, title }) {

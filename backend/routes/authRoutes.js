@@ -11,6 +11,7 @@ router.post('/forgot-password', auth.forgotPassword);
 router.post('/reset-password', auth.resetPassword);
 router.post('/logout', protect, auth.logout);
 router.get('/me', protect, auth.me);
+router.put('/profile', protect, auth.updateProfile);
 router.put('/change-password', protect, auth.changePassword);
 
 // User Management (Admin only)

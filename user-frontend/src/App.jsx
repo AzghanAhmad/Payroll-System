@@ -40,7 +40,8 @@ export default function App() {
           <Routes>
             <Route element={<GuestRoute />}>
               <Route path="/login" element={<UserLoginPage />} />
-              <Route path="/signup" element={<UserSignupPage />} />
+              <Route path="/signup" element={<Navigate to="/login" replace />} />
+              <Route path="/register" element={<Navigate to="/login" replace />} />
             </Route>
 
             <Route element={<ProtectedRoute />}>

@@ -29,6 +29,7 @@ import CategoriesPage from '@/pages/Stock/CategoriesPage';
 import StockBalanceSheetPage from '@/pages/Stock/StockBalanceSheetPage';
 import VendorsPage from '@/pages/Stock/VendorsPage';
 import StockHistoryPage from '@/pages/Stock/StockHistoryPage';
+import StockSettingsPage from '@/pages/Stock/StockSettingsPage';
 import UserStockDashboard from '@/pages/Stock/UserStockDashboard';
 
 import UsersSettings from '@/pages/Settings/UsersSettings';
@@ -117,6 +118,7 @@ export default function AppRoutes() {
           <Route path="/stock/balance-sheet" element={<StockBalanceSheetPage />} />
           <Route path="/stock/vendors" element={<VendorsPage />} />
           <Route path="/stock/history" element={<StockHistoryPage />} />
+          <Route path="/stock/settings" element={<StockSettingsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/hub" replace />} />

@@ -190,6 +190,38 @@ export const changePassword = asyncHandler(async (req, res) => {
   res.json({ message: 'Password updated successfully' });
 });
 
+/** Logged-in user updates their own profile (name, email) */
+export const updateProfile = asyncHandler(async (req, res) => {
+  const { name, email } = req.body;
+  const user = await User.findById(req.user._id);
+  if (!user) throw new AppError('User not found', 404);
+
+  if (name?.trim()) user.name = name.trim();
+  if (email?.trim()) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail !== user.email) {
+      const existing = await User.findOne({ email: normalizedEmail, _id: { $ne: user._id } });
+      if (existing) {
+        throw new AppError('An account with this email already exists', 400);
+      }
+      user.email = normalizedEmail;
+    }
+  }
+
+  await user.save();
+
+  res.json({
+    message: 'Profile updated successfully',
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      employee: user.employee,
+    },
+  });
+});
+
 // ================= ADMIN USER MANAGEMENT =================
 export const listUsers = asyncHandler(async (req, res) => {
   const users = await User.find().select('-password -refreshToken').sort({ createdAt: -1 });

@@ -46,13 +46,7 @@ export default function UserLoginPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">Need an account?</span>
-          <Link
-            to="/signup"
-            className="text-xs font-semibold text-sky-400 hover:text-sky-300 transition-colors"
-          >
-            Sign up &rarr;
-          </Link>
+          <span className="text-xs text-slate-400">Authorized Personnel Only</span>
         </div>
       </header>
 
@@ -116,10 +110,7 @@ export default function UserLoginPage() {
 
           <div className="mt-6 pt-5 border-t border-slate-800 text-center">
             <p className="text-xs text-slate-400">
-              Don't have a staff login?{' '}
-              <Link to="/signup" className="font-semibold text-sky-400 hover:underline">
-                Register here
-              </Link>
+              Staff accounts are created and managed by the administrator.
             </p>
           </div>
         </div>
