@@ -177,6 +177,7 @@ export default function ProductsPage() {
       ...form,
       name: form.name.trim(),
       sku: form.sku.trim(),
+      vendor: form.vendor || null,
       startBalance: Number(form.startBalance) || 0,
       currentQuantity: Number(form.currentQuantity) || 0,
       minQuantity: Number(form.minQuantity) || 5,

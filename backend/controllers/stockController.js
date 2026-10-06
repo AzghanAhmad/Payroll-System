@@ -143,15 +143,41 @@ export const updateProduct = asyncHandler(async (req, res) => {
   if (!product) throw new AppError('Product not found', 404);
 
   const updates = { ...req.body };
-  if (updates.startBalance !== undefined) updates.startBalance = Number(updates.startBalance);
-  if (updates.currentQuantity !== undefined) updates.currentQuantity = Number(updates.currentQuantity);
-  if (updates.endBalance !== undefined) updates.endBalance = Number(updates.endBalance);
-  if (updates.minQuantity !== undefined) updates.minQuantity = Number(updates.minQuantity);
-  if (updates.maxQuantity !== undefined) updates.maxQuantity = Number(updates.maxQuantity);
-  if (updates.costPrice !== undefined) updates.costPrice = Number(updates.costPrice);
-  if (updates.sellingPrice !== undefined) updates.sellingPrice = Number(updates.sellingPrice);
 
-  const updated = await Product.findByIdAndUpdate(req.params.id, updates, { new: true })
+  // Remove immutable / schema-disallowed fields if present
+  delete updates._id;
+  delete updates.createdAt;
+  delete updates.updatedAt;
+
+  // Handle vendor: if empty string or null, set to null
+  if (updates.vendor === '' || updates.vendor === null || updates.vendor === undefined) {
+    updates.vendor = null;
+  } else if (typeof updates.vendor === 'object' && updates.vendor?._id) {
+    updates.vendor = updates.vendor._id;
+  }
+
+  // Handle category: if object passed, extract id; if not provided or empty, retain existing
+  if (typeof updates.category === 'object' && updates.category?._id) {
+    updates.category = updates.category._id;
+  }
+  if (!updates.category) {
+    delete updates.category;
+  }
+
+  // Ensure numeric fields
+  if (updates.startBalance !== undefined) updates.startBalance = Number(updates.startBalance) || 0;
+  if (updates.currentQuantity !== undefined) updates.currentQuantity = Number(updates.currentQuantity) || 0;
+  if (updates.endBalance !== undefined) updates.endBalance = Number(updates.endBalance) || updates.currentQuantity;
+  if (updates.minQuantity !== undefined) updates.minQuantity = Number(updates.minQuantity) || 5;
+  if (updates.maxQuantity !== undefined) updates.maxQuantity = Number(updates.maxQuantity) || 100;
+  if (updates.costPrice !== undefined) updates.costPrice = Number(updates.costPrice) || 0;
+  if (updates.sellingPrice !== undefined) updates.sellingPrice = Number(updates.sellingPrice) || 0;
+
+  if (updates.name && typeof updates.name === 'string') updates.name = updates.name.trim();
+  if (updates.sku && typeof updates.sku === 'string') updates.sku = updates.sku.trim();
+  if (updates.description && typeof updates.description === 'string') updates.description = updates.description.trim();
+
+  const updated = await Product.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true })
     .populate('category', 'name')
     .populate('vendor', 'name phone');
 
