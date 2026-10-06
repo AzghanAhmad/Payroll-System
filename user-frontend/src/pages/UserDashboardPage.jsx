@@ -28,6 +28,7 @@ export default function UserDashboardPage() {
   const [search, setSearch] = useState('');
 
   // Form States
+  const [addCategoryId, setAddCategoryId] = useState('');
   const [addForm, setAddForm] = useState({
     productId: '',
     quantity: '',
@@ -35,6 +36,7 @@ export default function UserDashboardPage() {
     reference: '',
   });
 
+  const [saleCategoryId, setSaleCategoryId] = useState('');
   const [saleForm, setSaleForm] = useState({
     productId: '',
     quantity: 1,
@@ -44,6 +46,11 @@ export default function UserDashboardPage() {
   });
 
   // Queries
+  const { data: catData } = useQuery({
+    queryKey: ['stock-categories'],
+    queryFn: stockApi.listCategories,
+  });
+
   const { data: prodData, isLoading: prodLoading } = useQuery({
     queryKey: ['stock-products'],
     queryFn: () => stockApi.listProducts({}),
@@ -59,6 +66,7 @@ export default function UserDashboardPage() {
     queryFn: () => stockApi.movements({ limit: 15 }),
   });
 
+  const categories = catData?.items || [];
   const products = prodData?.items || [];
   const employees = empData?.items || [];
   const recentMovements = movementsData?.items || [];
@@ -136,6 +144,21 @@ export default function UserDashboardPage() {
       p.sku?.toLowerCase().includes(search.toLowerCase()) ||
       p.category?.name?.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Products filtered by selected Category
+  const addFilteredProducts = addCategoryId
+    ? products.filter((p) => {
+        const catId = typeof p.category === 'object' ? p.category?._id : p.category;
+        return catId === addCategoryId;
+      })
+    : [];
+
+  const saleFilteredProducts = saleCategoryId
+    ? products.filter((p) => {
+        const catId = typeof p.category === 'object' ? p.category?._id : p.category;
+        return catId === saleCategoryId;
+      })
+    : [];
 
   const selectedAddProd = products.find((p) => p._id === addForm.productId);
   const selectedSaleProd = products.find((p) => p._id === saleForm.productId);
@@ -238,36 +261,82 @@ export default function UserDashboardPage() {
                 </div>
 
                 <form onSubmit={handleAddSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Choose Product *
-                    </label>
-                    <select
-                      value={addForm.productId}
-                      onChange={(e) => setAddForm({ ...addForm, productId: e.target.value })}
-                      required
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
-                    >
-                      <option value="">-- Choose Product to Restock --</option>
-                      {products.map((p) => (
-                        <option key={p._id} value={p._id}>
-                          {p.name} {p.sku ? `(SKU: ${p.sku})` : ''} — Current: {p.currentQuantity} {p.unit}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Category Dropdown */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                        <span>1. Select Category *</span>
+                        {addCategoryId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddCategoryId('');
+                              setAddForm((prev) => ({ ...prev, productId: '' }));
+                            }}
+                            className="text-[10px] text-sky-600 hover:underline cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </label>
+                      <select
+                        value={addCategoryId}
+                        onChange={(e) => {
+                          const cid = e.target.value;
+                          setAddCategoryId(cid);
+                          setAddForm((prev) => ({ ...prev, productId: '' }));
+                        }}
+                        required
+                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white font-medium"
+                      >
+                        <option value="">-- Choose Category First --</option>
+                        {categories.map((c) => (
+                          <option key={c._id} value={c._id}>
+                            {c.name} {c.isParent ? '(Parent Category)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                    {selectedAddProd && (
-                      <div className="mt-2 p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <Package className="w-4 h-4 text-sky-600" />
-                          <span className="font-medium text-slate-700">Current Stock Balance:</span>
-                        </div>
-                        <span className="font-bold text-slate-900 font-mono">
-                          {selectedAddProd.currentQuantity} {selectedAddProd.unit}
-                        </span>
-                      </div>
-                    )}
+                    {/* Product Dropdown (filtered by selected category) */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        2. Choose Product *
+                      </label>
+                      <select
+                        value={addForm.productId}
+                        onChange={(e) => setAddForm({ ...addForm, productId: e.target.value })}
+                        required
+                        disabled={!addCategoryId}
+                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      >
+                        <option value="">
+                          {!addCategoryId
+                            ? '-- Select a Category First --'
+                            : addFilteredProducts.length === 0
+                            ? '-- No Products Found In Category --'
+                            : '-- Choose Product to Restock --'}
+                        </option>
+                        {addFilteredProducts.map((p) => (
+                          <option key={p._id} value={p._id}>
+                            {p.name} {p.sku ? `(SKU: ${p.sku})` : ''} — Stock: {p.currentQuantity} {p.unit}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
+
+                  {selectedAddProd && (
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 text-sky-600" />
+                        <span className="font-medium text-slate-700">Current Stock Balance:</span>
+                      </div>
+                      <span className="font-bold text-slate-900 font-mono">
+                        {selectedAddProd.currentQuantity} {selectedAddProd.unit}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -342,43 +411,89 @@ export default function UserDashboardPage() {
                 </div>
 
                 <form onSubmit={handleSaleSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Select Sold Product *
-                    </label>
-                    <select
-                      value={saleForm.productId}
-                      onChange={(e) => {
-                        const pid = e.target.value;
-                        const prod = products.find((p) => p._id === pid);
-                        setSaleForm({
-                          ...saleForm,
-                          productId: pid,
-                          unitPrice: prod?.costPrice || '',
-                        });
-                      }}
-                      required
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white"
-                    >
-                      <option value="">-- Choose Sold Item --</option>
-                      {products.map((p) => (
-                        <option key={p._id} value={p._id} disabled={p.currentQuantity <= 0}>
-                          {p.name} — In Stock: {p.currentQuantity} {p.unit} {p.currentQuantity <= 0 ? '(OUT OF STOCK)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Category Dropdown */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                        <span>1. Select Category *</span>
+                        {saleCategoryId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSaleCategoryId('');
+                              setSaleForm((prev) => ({ ...prev, productId: '', unitPrice: '' }));
+                            }}
+                            className="text-[10px] text-emerald-600 hover:underline cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </label>
+                      <select
+                        value={saleCategoryId}
+                        onChange={(e) => {
+                          const cid = e.target.value;
+                          setSaleCategoryId(cid);
+                          setSaleForm((prev) => ({ ...prev, productId: '', unitPrice: '' }));
+                        }}
+                        required
+                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white font-medium"
+                      >
+                        <option value="">-- Choose Category First --</option>
+                        {categories.map((c) => (
+                          <option key={c._id} value={c._id}>
+                            {c.name} {c.isParent ? '(Parent Category)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                    {selectedSaleProd && (
-                      <div className="mt-2 p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                        <span className="text-slate-600">
-                          Available: <strong className="text-slate-900 font-mono">{selectedSaleProd.currentQuantity} {selectedSaleProd.unit}</strong>
-                        </span>
-                        <span className="text-slate-600">
-                          Cost: <strong className="text-slate-900 font-mono">{formatMoney(selectedSaleProd.costPrice)}</strong>
-                        </span>
-                      </div>
-                    )}
+                    {/* Product Dropdown (filtered by selected category) */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        2. Select Sold Product *
+                      </label>
+                      <select
+                        value={saleForm.productId}
+                        onChange={(e) => {
+                          const pid = e.target.value;
+                          const prod = products.find((p) => p._id === pid);
+                          setSaleForm({
+                            ...saleForm,
+                            productId: pid,
+                            unitPrice: prod?.costPrice || '',
+                          });
+                        }}
+                        required
+                        disabled={!saleCategoryId}
+                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      >
+                        <option value="">
+                          {!saleCategoryId
+                            ? '-- Select a Category First --'
+                            : saleFilteredProducts.length === 0
+                            ? '-- No Products In Category --'
+                            : '-- Choose Sold Item --'}
+                        </option>
+                        {saleFilteredProducts.map((p) => (
+                          <option key={p._id} value={p._id} disabled={p.currentQuantity <= 0}>
+                            {p.name} — In Stock: {p.currentQuantity} {p.unit} {p.currentQuantity <= 0 ? '(OUT OF STOCK)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
+
+                  {selectedSaleProd && (
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                      <span className="text-slate-600">
+                        Available: <strong className="text-slate-900 font-mono">{selectedSaleProd.currentQuantity} {selectedSaleProd.unit}</strong>
+                      </span>
+                      <span className="text-slate-600">
+                        Cost: <strong className="text-slate-900 font-mono">{formatMoney(selectedSaleProd.costPrice)}</strong>
+                      </span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>

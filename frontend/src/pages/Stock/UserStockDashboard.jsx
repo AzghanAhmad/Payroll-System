@@ -30,6 +30,7 @@ export default function UserStockDashboard() {
   const [search, setSearch] = useState('');
 
   // Form States
+  const [addCategoryId, setAddCategoryId] = useState('');
   const [addForm, setAddForm] = useState({
     productId: '',
     quantity: '',
@@ -37,6 +38,7 @@ export default function UserStockDashboard() {
     reference: '',
   });
 
+  const [saleCategoryId, setSaleCategoryId] = useState('');
   const [saleForm, setSaleForm] = useState({
     productId: '',
     quantity: 1,
@@ -46,6 +48,11 @@ export default function UserStockDashboard() {
   });
 
   // Queries
+  const { data: catData } = useQuery({
+    queryKey: ['stock-categories'],
+    queryFn: stockApi.listCategories,
+  });
+
   const { data: prodData, isLoading: prodLoading } = useQuery({
     queryKey: ['stock-products'],
     queryFn: () => stockApi.listProducts({}),
@@ -60,6 +67,8 @@ export default function UserStockDashboard() {
     queryKey: ['stock-movements-user'],
     queryFn: () => stockApi.movements({ limit: 15 }),
   });
+
+  const categories = catData?.items || [];
 
   const products = prodData?.items || [];
   const employees = empData?.items || [];
@@ -139,6 +148,21 @@ export default function UserStockDashboard() {
       p.sku?.toLowerCase().includes(search.toLowerCase()) ||
       p.category?.name?.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Filtered by Category
+  const addFilteredProducts = addCategoryId
+    ? products.filter((p) => {
+        const catId = typeof p.category === 'object' ? p.category?._id : p.category;
+        return catId === addCategoryId;
+      })
+    : [];
+
+  const saleFilteredProducts = saleCategoryId
+    ? products.filter((p) => {
+        const catId = typeof p.category === 'object' ? p.category?._id : p.category;
+        return catId === saleCategoryId;
+      })
+    : [];
 
   const selectedAddProd = products.find((p) => p._id === addForm.productId);
   const selectedSaleProd = products.find((p) => p._id === saleForm.productId);
@@ -241,18 +265,62 @@ export default function UserStockDashboard() {
                 </div>
 
                 <form onSubmit={handleAddSubmit} className="space-y-4">
+                  {/* Category Dropdown */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                      <span>1. Select Category *</span>
+                      {addCategoryId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddCategoryId('');
+                            setAddForm((prev) => ({ ...prev, productId: '' }));
+                          }}
+                          className="text-[10px] text-sky-600 hover:underline cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </label>
+                    <select
+                      value={addCategoryId}
+                      onChange={(e) => {
+                        const cid = e.target.value;
+                        setAddCategoryId(cid);
+                        setAddForm((prev) => ({ ...prev, productId: '' }));
+                      }}
+                      required
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white font-medium"
+                    >
+                      <option value="">-- Choose Category First --</option>
+                      {categories.map((c) => (
+                        <option key={c._id} value={c._id}>
+                          {c.name} {c.isParent ? '(Parent Category)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Product Dropdown (filtered by selected category) */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Select Product *
+                      2. Select Product *
                     </label>
                     <select
                       value={addForm.productId}
                       onChange={(e) => setAddForm({ ...addForm, productId: e.target.value })}
                       required
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
+                      disabled={!addCategoryId}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                     >
-                      <option value="">-- Choose Product --</option>
-                      {products.map((p) => (
+                      <option value="">
+                        {!addCategoryId
+                          ? '-- Select a Category First --'
+                          : addFilteredProducts.length === 0
+                          ? '-- No Products Found In Category --'
+                          : '-- Choose Product --'}
+                      </option>
+                      {addFilteredProducts.map((p) => (
                         <option key={p._id} value={p._id}>
                           {p.name} — Current: {p.currentQuantity} {p.unit}
                         </option>
@@ -333,9 +401,46 @@ export default function UserStockDashboard() {
                 </div>
 
                 <form onSubmit={handleSaleSubmit} className="space-y-4">
+                  {/* Category Dropdown */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                      <span>1. Select Category *</span>
+                      {saleCategoryId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSaleCategoryId('');
+                            setSaleForm((prev) => ({ ...prev, productId: '', unitPrice: '' }));
+                          }}
+                          className="text-[10px] text-purple-600 hover:underline cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </label>
+                    <select
+                      value={saleCategoryId}
+                      onChange={(e) => {
+                        const cid = e.target.value;
+                        setSaleCategoryId(cid);
+                        setSaleForm((prev) => ({ ...prev, productId: '', unitPrice: '' }));
+                      }}
+                      required
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 bg-white font-medium"
+                    >
+                      <option value="">-- Choose Category First --</option>
+                      {categories.map((c) => (
+                        <option key={c._id} value={c._id}>
+                          {c.name} {c.isParent ? '(Parent Category)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Product Dropdown (filtered by selected category) */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Select Product *
+                      2. Select Product *
                     </label>
                     <select
                       value={saleForm.productId}
@@ -349,10 +454,17 @@ export default function UserStockDashboard() {
                         });
                       }}
                       required
-                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 bg-white"
+                      disabled={!saleCategoryId}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 bg-white disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                     >
-                      <option value="">-- Choose Product --</option>
-                      {products.map((p) => (
+                      <option value="">
+                        {!saleCategoryId
+                          ? '-- Select a Category First --'
+                          : saleFilteredProducts.length === 0
+                          ? '-- No Products Found In Category --'
+                          : '-- Choose Product --'}
+                      </option>
+                      {saleFilteredProducts.map((p) => (
                         <option key={p._id} value={p._id}>
                           {p.name} — In Stock: {p.currentQuantity} {p.unit}
                         </option>
